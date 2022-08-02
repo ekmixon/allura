@@ -86,21 +86,23 @@ class WebhookEditForm(WebhookCreateForm):
 
 
 class WebhookControllerMeta(type):
-    def __call__(cls, sender, app, *args, **kw):
+    def __call__(self, sender, app, *args, **kw):
         """Decorate post handlers with a validator that references
         the appropriate webhook sender for this controller.
         """
-        if hasattr(cls, 'create'):
-            cls.create = validate(
-                cls.create_form(),
-                error_handler=getattr(cls.index, '__func__', cls.index),
-            )(cls.create)
-        if hasattr(cls, 'edit'):
-            cls.edit = validate(
-                cls.edit_form(sender, app),
-                error_handler=getattr(cls._default, '__func__', cls._default),
-            )(cls.edit)
-        return type.__call__(cls, sender, app, *args, **kw)
+        if hasattr(self, 'create'):
+            self.create = validate(
+                self.create_form(),
+                error_handler=getattr(self.index, '__func__', self.index),
+            )(self.create)
+
+        if hasattr(self, 'edit'):
+            self.edit = validate(
+                self.edit_form(sender, app),
+                error_handler=getattr(self._default, '__func__', self._default),
+            )(self.edit)
+
+        return type.__call__(self, sender, app, *args, **kw)
 
 
 class WebhookController(six.with_metaclass(WebhookControllerMeta, BaseController, AdminControllerMixin)):
@@ -124,8 +126,8 @@ class WebhookController(six.with_metaclass(WebhookControllerMeta, BaseController
             session(wh).flush(wh)
         except DuplicateKeyError:
             session(wh).expunge(wh)
-            msg = '_the_form: "{}" webhook already exists for {} {}'.format(
-                wh.type, self.app.config.options.mount_label, url)
+            msg = f'_the_form: "{wh.type}" webhook already exists for {self.app.config.options.mount_label} {url}'
+
             raise Invalid(msg, None, None)
 
     @with_trailing_slash
@@ -141,7 +143,6 @@ class WebhookController(six.with_metaclass(WebhookControllerMeta, BaseController
 
     @expose('jinja:allura:templates/webhooks/create_form.html')  # needed when we "return self.index(...)"
     @require_post()
-    # @validate set dynamically in WebhookControllerMeta
     def create(self, url, secret):
         if self.sender.enforce_limit(self.app):
             webhook = M.Webhook(
@@ -161,11 +162,10 @@ class WebhookController(six.with_metaclass(WebhookControllerMeta, BaseController
         else:
             flash('You have exceeded the maximum number of webhooks '
                   'you are allowed to create for this project/app', 'error')
-        redirect(self.app.admin_url + 'webhooks')
+        redirect(f'{self.app.admin_url}webhooks')
 
     @expose('jinja:allura:templates/webhooks/create_form.html')  # needed when we "return self._default(...)"
     @require_post()
-    # @validate set dynamically in WebhookControllerMeta
     def edit(self, webhook, url, secret):
         old_url = webhook.hook_url
         old_secret = webhook.secret
@@ -179,7 +179,7 @@ class WebhookController(six.with_metaclass(WebhookControllerMeta, BaseController
                        webhook.type, old_url, url,
                        'secret changed' if old_secret != secret else '')
         flash('Edited successfully', 'ok')
-        redirect(self.app.admin_url + 'webhooks')
+        redirect(f'{self.app.admin_url}webhooks')
 
     @expose('json:')
     @require_post()
@@ -221,10 +221,7 @@ class WebhookRestController(BaseController):
     def _error(self, e):
         error = getattr(e, 'error_dict', None)
         if error:
-            _error = {}
-            for k, val in six.iteritems(error):
-                _error[k] = six.text_type(val)
-            return _error
+            return {k: six.text_type(val) for k, val in six.iteritems(error)}
         error = getattr(e, 'msg', None)
         if not error:
             error = getattr(e, 'message', '')
@@ -237,7 +234,7 @@ class WebhookRestController(BaseController):
     @expose('json:')
     @require_post()
     def index(self, **kw):
-        response.content_type = str('application/json')
+        response.content_type = 'application/json'
         try:
             params = {'secret': kw.pop('secret', ''),
                       'url': kw.pop('url', None)}
@@ -349,20 +346,14 @@ class SendWebhookHelper(object):
             self.webhook.secret.encode('utf-8'),
             json_payload.encode('utf-8'),
             hashlib.sha1)
-        return 'sha1=' + signature.hexdigest()
+        return f'sha1={signature.hexdigest()}'
 
     def log_msg(self, msg, response=None):
-        message = '{}: {} {} {}'.format(
-            msg,
-            self.webhook.type,
-            self.webhook.hook_url,
-            self.webhook.app_config.url())
+        message = f'{msg}: {self.webhook.type} {self.webhook.hook_url} {self.webhook.app_config.url()}'
+
         if response is not None:
-            message = '{} {} {} {}'.format(
-                message,
-                response.status_code,
-                response.text,
-                response.headers)
+            message = f'{message} {response.status_code} {response.text} {response.headers}'
+
         return message
 
     def send(self):
@@ -377,8 +368,7 @@ class SendWebhookHelper(object):
             for t in self.retries:
                 log.info('Retrying webhook in %s seconds', t)
                 time.sleep(t)
-                ok = self._send(self.webhook.hook_url, json_payload, headers)
-                if ok:
+                if ok := self._send(self.webhook.hook_url, json_payload, headers):
                     return
 
     def _send(self, url, data, headers):
@@ -433,11 +423,12 @@ class WebhookSender(object):
         """
         if not isinstance(params_or_list, list):
             params_or_list = [params_or_list]
-        webhooks = M.Webhook.query.find(dict(
-            app_config_id=c.app.config._id,
-            type=self.type,
-        )).all()
-        if webhooks:
+        if webhooks := M.Webhook.query.find(
+            dict(
+                app_config_id=c.app.config._id,
+                type=self.type,
+            )
+        ).all():
             payloads = [self.get_payload(**params)
                         for params in params_or_list]
             for webhook in webhooks:
@@ -476,9 +467,7 @@ class RepoPushWebhookSender(WebhookSender):
         return ''
 
     def _after(self, commit_ids):
-        if len(commit_ids) > 0:
-            return self._convert_id(commit_ids[0])
-        return ''
+        return self._convert_id(commit_ids[0]) if len(commit_ids) > 0 else ''
 
     def _convert_id(self, _id):
         if ':' in _id:

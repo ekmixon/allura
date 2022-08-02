@@ -135,10 +135,10 @@ class DiscussionController(BaseController, FeedController):
             else:
                 discussion_threads = self.discussion.threads
             return dict(ref_id={'$in': [t.index_id() for t in discussion_threads]})
+
         return FeedArgs(
-            query,
-            'Recent posts to %s' % self.discussion.name,
-            self.discussion.url())
+            query, f'Recent posts to {self.discussion.name}', self.discussion.url()
+        )
 
 
 class AppDiscussionController(DiscussionController):
@@ -255,8 +255,9 @@ class ThreadController(six.with_metaclass(h.ProxiedAttrMeta, BaseController, Fee
         """
         return FeedArgs(
             dict(ref_id=self.thread.index_id()),
-            'Recent posts to %s' % (self.thread.subject or '(no subject)'),
-            self.thread.url())
+            f"Recent posts to {self.thread.subject or '(no subject)'}",
+            self.thread.url(),
+        )
 
 
 def handle_post_or_reply(thread, edit_widget, rate_limit, kw, parent_post_id=None):
@@ -299,9 +300,9 @@ class PostController(six.with_metaclass(h.ProxiedAttrMeta, BaseController)):
 
     @LazyProperty
     def post(self):
-        post = self.M.Post.query.get(
-            slug=self._post_slug, thread_id=self.thread._id)
-        if post:
+        if post := self.M.Post.query.get(
+            slug=self._post_slug, thread_id=self.thread._id
+        ):
             return post
         else:
             redirect('..')
@@ -456,9 +457,12 @@ class PostController(six.with_metaclass(h.ProxiedAttrMeta, BaseController)):
     @expose()
     def _lookup(self, id, *remainder):
         id = unquote(id)
-        return self.PostController(
-            self._discussion_controller,
-            self.thread, self._post_slug + '/' + id), remainder
+        return (
+            self.PostController(
+                self._discussion_controller, self.thread, f'{self._post_slug}/{id}'
+            ),
+            remainder,
+        )
 
 
 class DiscussionAttachmentController(AttachmentController):
@@ -563,8 +567,10 @@ class ModerationController(six.with_metaclass(h.ProxiedAttrMeta, BaseController)
                     posted.approve()
                     g.spam_checker.submit_ham(posted.text, artifact=posted, user=posted.author())
                     posted.thread.post_to_feed(posted)
-        flash('{} {}'.format(h.text.plural(count, 'post', 'posts'),
-                             'deleted' if delete else 'marked as spam' if spam else 'approved'))
+        flash(
+            f"{h.text.plural(count, 'post', 'posts')} {'deleted' if delete else 'marked as spam' if spam else 'approved'}"
+        )
+
         redirect(six.ensure_text(request.referer or '/'))
 
     @expose()
@@ -616,7 +622,7 @@ class ThreadRestController(ThreadController):
         require_access(self.thread, 'post')
         kw = self.W.edit_post.to_python(kw, None)  # could raise Invalid, but doesn't seem like it ever does
         p = self.thread.add_post(**kw)
-        redirect(p.slug + '/')
+        redirect(f'{p.slug}/')
 
 
 class AppDiscussionRestController(AppDiscussionController):

@@ -62,12 +62,11 @@ class ScriptCommand(base.Command):
                 sys.excepthook = utils.postmortem_hook
             filename = self.args[1]
             with open(filename) as fp:
-                ns = dict(__name__='__main__')
                 sys.argv = self.args[1:]
                 if self.options.profile:
-                    cProfile.run(fp.read(), '%s.profile' %
-                                 os.path.basename(filename))
+                    cProfile.run(fp.read(), f'{os.path.basename(filename)}.profile')
                 else:
+                    ns = dict(__name__='__main__')
                     exec(compile(fp.read(), filename, 'exec'), ns)
 
 
@@ -90,7 +89,7 @@ class SetToolAccessCommand(base.Command):
                        ' so removing from list.')
                 continue
             if s not in ('alpha', 'beta'):
-                print('Unknown tool status %s' % s)
+                print(f'Unknown tool status {s}')
                 sys.exit(1)
             extra_status.append(s)
         print('Setting project "%s" tool access to production + %r' % (

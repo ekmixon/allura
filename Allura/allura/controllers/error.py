@@ -32,9 +32,7 @@ class ErrorController(object):
     def document(self, *args, **kwargs):
         """Render the error document"""
         resp = request.environ.get('tg.original_response')
-        code = -1
-        if resp:
-            code = resp.status_int
+        code = resp.status_int if resp else -1
         default_message = ("<p>We're sorry but we weren't able to process "
                            " this request.</p>")
         message = request.environ.get('error_message', default_message)

@@ -51,7 +51,10 @@ class SpamFilter(object):
         log.info("No submit_ham available for %s", self.filter_name)
 
     def record_result(self, result, artifact, user):
-        log.info("spam=%s (%s): %s" % (str(result), self.filter_name, artifact.url() if artifact else ''))
+        log.info(
+            f"spam={str(result)} ({self.filter_name}): {artifact.url() if artifact else ''}"
+        )
+
         r = SpamCheckResult(
             ref=artifact.ref if artifact else None,
             project_id=artifact.project_id if artifact else None,
@@ -89,11 +92,7 @@ class ChainedSpamFilter(SpamFilter):
             self.filters.append(spam_filter)
 
     def check(self, *a, **kw):
-        for spam_filter in self.filters:
-            # note: SpamFilter.get() has wrapped all .check() functions with exceptionless
-            if spam_filter.check(*a, **kw):
-                return True
-        return False
+        return any(spam_filter.check(*a, **kw) for spam_filter in self.filters)
 
     def submit_spam(self, *a, **kw):
         for spam_filter in self.filters:

@@ -101,10 +101,7 @@ class Ming(fev.FancyValidator):
         return result
 
     def _from_python(self, value, state):
-        if isinstance(value, ObjectId):
-            return value
-        else:
-            return value._id
+        return value if isinstance(value, ObjectId) else value._id
 
 
 class UniqueOAuthApplicationName(UnicodeString):
@@ -136,8 +133,12 @@ class MaxBytesValidator(fev.FancyValidator):
     def _to_python(self, value, state):
         value_bytes = h.really_unicode(value or '').encode('utf-8')
         if len(value_bytes) > self.max:
-            raise fe.Invalid("Please enter a value less than %s bytes long." %
-                             self.max, value, state)
+            raise fe.Invalid(
+                f"Please enter a value less than {self.max} bytes long.",
+                value,
+                state,
+            )
+
         return value
 
     def from_python(self, value, state):
@@ -206,10 +207,10 @@ class UserValidator(fev.FancyValidator):
 
     def _to_python(self, value, state):
         from allura import model as M
-        user = M.User.by_username(value)
-        if not user:
+        if user := M.User.by_username(value):
+            return user
+        else:
             raise fe.Invalid('Invalid username', value, state)
-        return user
 
 
 class AnonymousValidator(fev.FancyValidator):
@@ -237,28 +238,24 @@ class PathValidator(fev.FancyValidator):
         elif len(parts) > 2:
             nbhd_name, project_name, app_name = parts[0], parts[1], parts[2]
 
-        path_parts = {}
-        nbhd_url_prefix = '/%s/' % nbhd_name
+        nbhd_url_prefix = f'/{nbhd_name}/'
         nbhd = M.Neighborhood.query.get(url_prefix=nbhd_url_prefix)
         if not nbhd:
-            raise fe.Invalid('Invalid neighborhood: %s' %
-                             nbhd_url_prefix, value, state)
+            raise fe.Invalid(f'Invalid neighborhood: {nbhd_url_prefix}', value, state)
 
         project = M.Project.query.get(
             shortname=nbhd.shortname_prefix + project_name,
             neighborhood_id=nbhd._id)
         if not project:
-            raise fe.Invalid('Invalid project: %s' %
-                             project_name, value, state)
+            raise fe.Invalid(f'Invalid project: {project_name}', value, state)
 
-        path_parts['project'] = project
+        path_parts = {'project': project}
         if app_name:
-            app = project.app_instance(app_name)
-            if not app:
-                raise fe.Invalid('Invalid app mount point: %s' %
-                                 app_name, value, state)
-            path_parts['app'] = app
+            if app := project.app_instance(app_name):
+                path_parts['app'] = app
 
+            else:
+                raise fe.Invalid(f'Invalid app mount point: {app_name}', value, state)
         return path_parts
 
 
@@ -270,7 +267,7 @@ class JsonValidator(fev.FancyValidator):
         try:
             json.loads(value)
         except ValueError as e:
-            raise fe.Invalid('Invalid JSON: ' + str(e), value, state)
+            raise fe.Invalid(f'Invalid JSON: {str(e)}', value, state)
         return value
 
 
@@ -285,7 +282,7 @@ class JsonConverter(fev.FancyValidator):
         try:
             obj = json.loads(value)
         except ValueError as e:
-            raise fe.Invalid('Invalid JSON: ' + str(e), value, state)
+            raise fe.Invalid(f'Invalid JSON: {str(e)}', value, state)
         if not isinstance(obj, dict):
             raise fe.Invalid('Not a dict (JSON object)', value, state)
         return obj
@@ -346,23 +343,23 @@ class CreateSiteNotificationSchema(fe.Schema):
 class DateValidator(fev.FancyValidator):
 
     def _to_python(self, value, state):
-        value = convertDate(value)
-        if not value:
+        if value := convertDate(value):
+            return value
+        else:
             raise fe.Invalid(
                 "Please enter a valid date in the format DD/MM/YYYY.",
                 value, state)
-        return value
 
 
 class TimeValidator(fev.FancyValidator):
 
     def _to_python(self, value, state):
-        value = convertTime(value)
-        if not value:
+        if value := convertTime(value):
+            return value
+        else:
             raise fe.Invalid(
                 "Please enter a valid time in the format HH:MM.",
                 value, state)
-        return value
 
 
 class OneOfValidator(fev.FancyValidator):
@@ -382,11 +379,12 @@ class OneOfValidator(fev.FancyValidator):
             allowed = ''
             for v in self.validvalues:
                 if allowed != '':
-                    allowed = allowed + ', '
+                    allowed = f'{allowed}, '
                 allowed = allowed + '"%s"' % v
             raise fe.Invalid(
-                "Invalid value. The allowed values are %s." % allowed,
-                value, state)
+                f"Invalid value. The allowed values are {allowed}.", value, state
+            )
+
         return value
 
 
@@ -403,12 +401,12 @@ class MapValidator(fev.FancyValidator):
                 raise fe.Invalid("This field can't be empty.", value, state)
             else:
                 return None
-        conv_value = self.map.get(value)
-        if not conv_value:
+        if conv_value := self.map.get(value):
+            return conv_value
+        else:
             raise fe.Invalid(
                 "Invalid value. Please, choose one of the valid values.",
                 value, state)
-        return conv_value
 
 
 class YouTubeConverter(fev.FancyValidator):
@@ -423,14 +421,12 @@ class YouTubeConverter(fev.FancyValidator):
              r'((\w|-){11})(?:\S+)?$')
 
     def _to_python(self, value, state):
-        match = re.match(YouTubeConverter.REGEX, value)
-        if match:
-            video_id = match.group(1)
-            return 'www.youtube.com/embed/{}?rel=0'.format(video_id)
-        else:
+        if not (match := re.match(YouTubeConverter.REGEX, value)):
             raise fe.Invalid(
                 "The URL does not appear to be a valid YouTube video.",
                 value, state)
+        video_id = match[1]
+        return f'www.youtube.com/embed/{video_id}?rel=0'
 
 
 def convertDate(datestring):
@@ -439,8 +435,7 @@ def convertDate(datestring):
 
     for f in formats:
         try:
-            date = datetime.strptime(datestring, f)
-            return date
+            return datetime.strptime(datestring, f)
         except Exception:
             pass
     return None
@@ -463,11 +458,9 @@ class IconValidator(fev.FancyValidator):
 
     def _to_python(self, value, state):
         p = re.compile(self.regex, flags=re.I)
-        result = p.search(value.filename)
-
-        if not result:
+        if result := p.search(value.filename):
+            return value
+        else:
             raise fe.Invalid(
                 'Project icons must be PNG, GIF, JPG, or BMP format.',
                 value, state)
-
-        return value

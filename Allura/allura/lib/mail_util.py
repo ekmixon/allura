@@ -73,7 +73,7 @@ def AddrHeader(fromaddr):
     '''
     if isinstance(fromaddr, six.string_types) and ' <' in fromaddr:
         name, addr = fromaddr.rsplit(' <', 1)
-        addr = '<' + addr  # restore the char we just split off
+        addr = f'<{addr}'
         addrheader = Header(name, addr)
         if str(addrheader).startswith('=?'):  # encoding escape chars
             # then quoting the name is no longer necessary
@@ -111,17 +111,17 @@ def parse_address(addr):
             domain = domain[:-len(suffix)]
             break
     else:
-        raise exc.AddressException('Unknown domain: ' + domain)
+        raise exc.AddressException(f'Unknown domain: {domain}')
     path = '/'.join(reversed(domain.split('.')))
-    project, mount_point = h.find_project('/' + path)
+    project, mount_point = h.find_project(f'/{path}')
     if project is None:
-        raise exc.AddressException('Unknown project: ' + domain)
+        raise exc.AddressException(f'Unknown project: {domain}')
     if len(mount_point) != 1:
-        raise exc.AddressException('Unknown tool: ' + domain)
+        raise exc.AddressException(f'Unknown tool: {domain}')
     with h.push_config(c, project=project):
         app = project.app_instance(mount_point[0])
         if not app:
-            raise exc.AddressException('Unknown tool: ' + domain)
+            raise exc.AddressException(f'Unknown tool: {domain}')
     return userpart, project, app
 
 
@@ -217,8 +217,7 @@ def encode_email_part(content, content_type):
             payload = cs.body_encode(content.encode('utf-8'))
             msg.set_payload(payload, 'utf-8')
             return msg
-    else:
-        return MIMEText(encoded_content, content_type, encoding)
+    return MIMEText(encoded_content, content_type, encoding)
 
 
 def make_multipart_message(*parts):
@@ -243,9 +242,7 @@ def _parse_smtp_addr(addr):
     addrs = _parse_message_id(addr)
     if addrs and addrs[0]:
         return addrs[0]
-    if '@' in addr:
-        return addr
-    return g.noreply
+    return addr if '@' in addr else g.noreply
 
 
 def isvalid(addr):
@@ -275,7 +272,7 @@ class SMTPClient(object):
         message['From'] = AddrHeader(fromaddr)
         message['Reply-To'] = AddrHeader(reply_to)
         message['Subject'] = Header(subject)
-        message['Message-ID'] = Header('<' + message_id + '>')
+        message['Message-ID'] = Header(f'<{message_id}>')
         message['Date'] = email.utils.formatdate()
         if sender:
             message['Sender'] = AddrHeader(sender)
@@ -285,11 +282,11 @@ class SMTPClient(object):
         if in_reply_to:
             if not isinstance(in_reply_to, six.string_types):
                 raise TypeError('Only strings are supported now, not lists')
-            message['In-Reply-To'] = Header('<%s>' % in_reply_to)
+            message['In-Reply-To'] = Header(f'<{in_reply_to}>')
             if not references:
                 message['References'] = message['In-Reply-To']
         if references:
-            references = ['<%s>' % r for r in aslist(references)]
+            references = [f'<{r}>' for r in aslist(references)]
             message['References'] = Header(*references)
         content = message.as_string()
         smtp_addrs = list(map(_parse_smtp_addr, addrs))

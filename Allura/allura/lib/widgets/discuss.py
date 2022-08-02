@@ -67,11 +67,11 @@ class AttachPost(ff.ForgeForm):
 
     @property
     def fields(self):
-        fields = [
-            ew.InputField(name='file_info', field_type='file',
-                          label='New Attachment')
+        return [
+            ew.InputField(
+                name='file_info', field_type='file', label='New Attachment'
+            )
         ]
-        return fields
 
 
 class ModeratePosts(ew.SimpleForm):
@@ -81,8 +81,7 @@ class ModeratePosts(ew.SimpleForm):
         submit_text=None)
 
     def resources(self):
-        for r in super(ModeratePosts, self).resources():
-            yield r
+        yield from super(ModeratePosts, self).resources()
         yield ew.JSScript('''
       (function($){
           var tbl = $('form table');
@@ -140,8 +139,7 @@ class TagPost(ff.ForgeForm):
     fields = [ffw.LabelEdit(label='Labels', name='labels', className='title')]
 
     def resources(self):
-        for r in ffw.LabelEdit(name='labels').resources():
-            yield r
+        yield from ffw.LabelEdit(name='labels').resources()
 
 
 class EditPost(ff.ForgeForm):
@@ -172,10 +170,8 @@ class EditPost(ff.ForgeForm):
         return fields
 
     def resources(self):
-        for r in ew.TextField(name='subject').resources():
-            yield r
-        for r in ffw.MarkdownEdit(name='text').resources():
-            yield r
+        yield from ew.TextField(name='subject').resources()
+        yield from ffw.MarkdownEdit(name='text').resources()
         yield ew.JSScript('''$(document).ready(function () {
             $("a.attachment_form_add_button").click(function(evt){
                 $(this).hide();
@@ -245,8 +241,7 @@ class SubscriptionForm(ew.SimpleForm):
         _threads = _ThreadsTable()
 
     def resources(self):
-        for r in super(SubscriptionForm, self).resources():
-            yield r
+        yield from super(SubscriptionForm, self).resources()
         yield ew.JSScript('''
         $(window).load(function () {
             $('tbody').children(':even').addClass('even');
@@ -267,8 +262,7 @@ class HierWidget(ew_core.Widget):
 
     def resources(self):
         for w in six.itervalues(self.widgets):
-            for r in w.resources():
-                yield r
+            yield from w.resources()
 
 
 class Attachment(ew_core.Widget):
@@ -311,11 +305,9 @@ class Post(HierWidget):
         attachment=Attachment())
 
     def resources(self):
-        for r in super(Post, self).resources():
-            yield r
+        yield from super(Post, self).resources()
         for w in six.itervalues(self.widgets):
-            for r in w.resources():
-                yield r
+            yield from w.resources()
         yield ew.CSSScript('''
         div.moderate {
             color:grey;
@@ -357,11 +349,9 @@ class Thread(HierWidget):
         edit_post=EditPost(submit_text='Submit'))
 
     def resources(self):
-        for r in super(Thread, self).resources():
-            yield r
+        yield from super(Thread, self).resources()
         for w in six.itervalues(self.widgets):
-            for r in w.resources():
-                yield r
+            yield from w.resources()
         yield ew.JSScript('''
         $(document).ready(function () {
             var thread_tag = $('a.thread_tag');

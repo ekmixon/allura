@@ -86,16 +86,24 @@ class AlluraJinjaRenderer(JinjaRenderer):
                 import pylibmc
                 from jinja2 import MemcachedBytecodeCache
                 client = pylibmc.Client([config['memcached_host']])
-                bcc_prefix = 'jinja2/{}/'.format(jinja2.__version__)
+                bcc_prefix = f'jinja2/{jinja2.__version__}/'
                 if six.PY3:
-                    bcc_prefix += 'py{}{}/'.format(sys.version_info.major, sys.version_info.minor)
+                    bcc_prefix += f'py{sys.version_info.major}{sys.version_info.minor}/'
                 bcc = MemcachedBytecodeCache(client, prefix=bcc_prefix)
             elif cache_type == 'filesystem':
                 from jinja2 import FileSystemBytecodeCache
-                bcc = FileSystemBytecodeCache(pattern='__jinja2_{}_%s.cache'.format(jinja2.__version__))
+                bcc = FileSystemBytecodeCache(
+                    pattern=f'__jinja2_{jinja2.__version__}_%s.cache'
+                )
+
         except Exception:
-            log.exception("Error encountered while setting up a" +
-                          " %s-backed bytecode cache for Jinja" % cache_type)
+            log.exception(
+                (
+                    "Error encountered while setting up a"
+                    + f" {cache_type}-backed bytecode cache for Jinja"
+                )
+            )
+
         return bcc
 
     @classmethod
@@ -131,7 +139,7 @@ class JinjaEngine(ew.TemplateEngine):
         try:
             return self._environ.get_template(template_name)
         except jinja2.TemplateNotFound:
-            raise ew.errors.TemplateNotFound('%s not found' % template_name)
+            raise ew.errors.TemplateNotFound(f'{template_name} not found')
 
     def parse(self, template_text, filepath=None):
         return self._environ.from_string(template_text)

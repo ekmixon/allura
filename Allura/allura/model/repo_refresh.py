@@ -108,10 +108,10 @@ def refresh_repo(repo, all_commits=False, notify=True, new_clone=False, commits_
         by_branches, by_tags = _group_commits(repo, commit_ids)
         params = []
         for b, commits in six.iteritems(by_branches):
-            ref = 'refs/heads/{}'.format(b) if b != '__default__' else None
+            ref = f'refs/heads/{b}' if b != '__default__' else None
             params.append(dict(commit_ids=commits, ref=ref))
         for t, commits in six.iteritems(by_tags):
-            ref = 'refs/tags/{}'.format(t)
+            ref = f'refs/tags/{t}'
             params.append(dict(commit_ids=commits, ref=ref))
         if params:
             RepoPushWebhookSender().send(params)
@@ -133,7 +133,7 @@ def refresh_commit_repos(all_commit_ids, repo):
                 repo_ids={'$ne': repo._id})):
             oid = ci._id
             ci.repo_ids.append(repo._id)
-            index_id = 'allura.model.repository.Commit#' + oid
+            index_id = f'allura.model.repository.Commit#{oid}'
             ref = ArtifactReferenceDoc(dict(
                 _id=index_id,
                 artifact_reference=dict(
@@ -177,7 +177,7 @@ def unknown_commit_ids(all_commit_ids):
     for chunk in utils.chunked_iter(all_commit_ids, QSIZE):
         chunk = list(chunk)
         q = CommitDoc.m.find(dict(_id={'$in': chunk}))
-        known_commit_ids = set(ci._id for ci in q)
+        known_commit_ids = {ci._id for ci in q}
         result += [oid for oid in chunk if oid not in known_commit_ids]
     return result
 
@@ -196,9 +196,7 @@ def send_notifications(repo, commit_ids):
     base_url = tg.config['base_url']
     for oids in utils.chunked_iter(commit_ids, QSIZE):
         chunk = list(oids)
-        index = dict(
-            (doc._id, doc)
-            for doc in Commit.query.find(dict(_id={'$in': chunk})))
+        index = {doc._id: doc for doc in Commit.query.find(dict(_id={'$in': chunk}))}
         for oid in chunk:
             ci = index[oid]
             href = repo.url_for_commit(oid)
@@ -239,10 +237,11 @@ def send_notifications(repo, commit_ids):
 
     if commit_msgs:
         if len(commit_msgs) > 1:
-            subject = "{} new commits to {}".format(len(commit_msgs), repo.app.config.options.mount_label)
+            subject = f"{len(commit_msgs)} new commits to {repo.app.config.options.mount_label}"
+
         else:
             commit = commit_msgs[0]
-            subject = 'New commit {} by {}'.format(commit['shorthand_id'], commit['author'])
+            subject = f"New commit {commit['shorthand_id']} by {commit['author']}"
         text = g.jinja2_env.get_template("allura:templates/mail/commits.md").render(
             commit_msgs=commit_msgs,
             max_num_commits=asint(tg.config.get('scm.notify.max_commits', 100)),
@@ -267,8 +266,7 @@ def _summarize(message):
         return ''
     summary = []
     for line in message.splitlines():
-        line = line.rstrip()
-        if line:
+        if line := line.rstrip():
             summary.append(line)
         else:
             break
@@ -287,9 +285,11 @@ def last_known_commit_id(all_commit_ids, new_commit_ids):
     """
     if not all_commit_ids:
         return None
-    if not new_commit_ids:
-        return all_commit_ids[-1]
-    return all_commit_ids[all_commit_ids.index(new_commit_ids[0]) - 1]
+    return (
+        all_commit_ids[all_commit_ids.index(new_commit_ids[0]) - 1]
+        if new_commit_ids
+        else all_commit_ids[-1]
+    )
 
 
 def _group_commits(repo, commit_ids):

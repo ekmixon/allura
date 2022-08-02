@@ -129,22 +129,20 @@ class EmailAddress(MappedClass):
 
     @classmethod
     def canonical(cls, addr):
-        mo = cls.re_format.match(addr)
-        if mo:
+        if mo := cls.re_format.match(addr):
             addr = mo.group(1)
-        if '@' in addr:
-            try:
-                user, domain = addr.strip().split('@')
-                return '%s@%s' % (user, domain.lower())
-            except ValueError:
-                return addr.strip()
-        else:
+        if '@' not in addr:
             return None
+        try:
+            user, domain = addr.strip().split('@')
+            return f'{user}@{domain.lower()}'
+        except ValueError:
+            return addr.strip()
 
     def send_claim_attempt(self):
-        confirmed_email = self.find(dict(email=self.email, confirmed=True)).all()
-
-        if confirmed_email:
+        if confirmed_email := self.find(
+            dict(email=self.email, confirmed=True)
+        ).all():
             log.info('Sending claim attempt email to %s', self.email)
             text = g.jinja2_env.get_template('allura:templates/mail/claimed_existing_email.txt').render(dict(
                 email=self,
@@ -152,9 +150,11 @@ class EmailAddress(MappedClass):
                 config=config
             ))
 
-            allura.tasks.mail_tasks.send_system_mail_to_user(self.email,
-                                                             '%s - Email address claim attempt' % config['site_name'],
-                                                             text)
+            allura.tasks.mail_tasks.send_system_mail_to_user(
+                self.email,
+                f"{config['site_name']} - Email address claim attempt",
+                text,
+            )
 
     def set_nonce_hash(self):
         self.nonce = sha256(os.urandom(10)).hexdigest()
@@ -163,23 +163,29 @@ class EmailAddress(MappedClass):
     def send_verification_link(self):
         self.set_nonce_hash()
         log.info('Sending verification link to %s', self.email)
-        text = '''
+        text = (
+            '''
 To verify the email address %s belongs to the user %s,
 please visit the following URL:
 
 %s
-''' % (self.email,
-       self.claimed_by_user(include_pending=True).username,
-       h.absurl('/auth/verify_addr?a={}'.format(h.urlquote(self.nonce))),
-       )
+'''
+            % (
+                self.email,
+                self.claimed_by_user(include_pending=True).username,
+                h.absurl(f'/auth/verify_addr?a={h.urlquote(self.nonce)}'),
+            )
+        )
+
         log.info('Verification email:\n%s', text)
         allura.tasks.mail_tasks.sendsimplemail.post(
             fromaddr=g.noreply,
             reply_to=g.noreply,
             toaddr=self.email,
-            subject='%s - Email address verification' % config['site_name'],
+            subject=f"{config['site_name']} - Email address verification",
             message_id=h.gen_message_id(),
-            text=text)
+            text=text,
+        )
 
 
 class AuthGlobals(MappedClass):
@@ -314,14 +320,18 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
     def index(self):
         provider = plugin.AuthenticationProvider.get(None)  # no need in request here
-        localization = '%s/%s' % (
-            self.get_pref('localization')['country'],
-            self.get_pref('localization')['city'])
-        socialnetworks = ' '.join(['%s: %s' % (n['socialnetwork'], n['accounturl'])
-                                   for n in self.get_pref('socialnetworks')])
+        localization = f"{self.get_pref('localization')['country']}/{self.get_pref('localization')['city']}"
+
+        socialnetworks = ' '.join(
+            [
+                f"{n['socialnetwork']}: {n['accounturl']}"
+                for n in self.get_pref('socialnetworks')
+            ]
+        )
+
         fields = dict(
             id=self.index_id(),
-            title='User %s' % self.username,
+            title=f'User {self.username}',
             url_s=self.url(),
             type_s=self.type_s,
             username_s=self.username,
@@ -342,7 +352,9 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
             telnumbers_t=' '.join([t for t in self.get_pref('telnumbers') if t]),
             skypeaccount_s=self.get_pref('skypeaccount'),
             webpages_t=' '.join([p for p in self.get_pref('webpages') if p]),
-            skills_t=' '.join([s['skill'].fullpath for s in self.get_skills() if s.get('skill')]),
+            skills_t=' '.join(
+                [s['skill'].fullpath for s in self.get_skills() if s.get('skill')]
+            ),
             last_access_login_date_dt=self.last_access['login_date'],
             last_access_login_ip_s=self.last_access['login_ip'],
             last_access_login_ua_t=self.last_access['login_ua'],
@@ -350,6 +362,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
             last_access_session_ip_s=self.last_access['session_ip'],
             last_access_session_ua_t=self.last_access['session_ua'],
         )
+
         return dict(provider.index_user(self), **fields)
 
     def track_login(self, req):
@@ -390,8 +403,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
         for auditlog in AuditLog.for_user(self, message=msg_regex):
             if not msg_regex.search(auditlog.message):
                 continue
-            login_detail = auth_provider.login_details_from_auditlog(auditlog)
-            if login_detail:
+            if login_detail := auth_provider.login_details_from_auditlog(auditlog):
                 self.add_login_detail(login_detail)
 
     def send_password_reset_email(self, email_address=None, subject_tmpl='{site_name} Password recovery'):
@@ -414,8 +426,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
                            hash=hash,
                            hash_expiry=datetime.utcnow() +
                                        timedelta(seconds=int(config.get('auth.recovery_hash_expiry_period', 600))))
-        reset_url = h.absurl('/auth/forgotten_password/{}'.format(hash))
-        return reset_url
+        return h.absurl(f'/auth/forgotten_password/{hash}')
 
     def can_send_user_message(self):
         """Return true if User is permitted to send a mesage to another user.
@@ -471,8 +482,8 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
         """
         tmpl = g.jinja2_env.get_template('allura:templates/mail/usermentions_email.md')
-        subject = '[%s:%s] Your name was mentioned' % (
-            c.project.shortname, c.app.config.options.mount_point)
+        subject = f'[{c.project.shortname}:{c.app.config.options.mount_point}] Your name was mentioned'
+
         item_url = artifact.url()
         if artifact.type_s == 'Post':
             item_url = artifact.url_paginated()
@@ -504,14 +515,13 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
     @property
     def stats(self):
-        if 'userstats' in g.entry_points['stats']:
-            from forgeuserstats.model.stats import UserStats
-
-            if self.stats_id:
-                return UserStats.query.get(_id=self.stats_id)
-            return UserStats.create(self)
-        else:
+        if 'userstats' not in g.entry_points['stats']:
             return None
+        from forgeuserstats.model.stats import UserStats
+
+        if self.stats_id:
+            return UserStats.query.get(_id=self.stats_id)
+        return UserStats.create(self)
 
     def get_pref(self, pref_name):
         return plugin.UserPreferencesProvider.get().get_pref(self, pref_name)
@@ -533,7 +543,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
         chosentimezone = timezone(tz_name)
         retlist = []
         for t in avail:
-            today = datetime.today()
+            today = datetime.now()
             start = datetime(
                 today.year, today.month, today.day,
                 t['start_time'].hour, t['start_time'].minute, 0)
@@ -557,14 +567,20 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
                     start_time=convtime1.time(),
                     end_time=convtime2.time()))
             else:
-                retlist.append(dict(
-                    week_day=week_day_start,
-                    start_time=convtime1.time(),
-                    end_time=time(23, 59)))
-                retlist.append(dict(
-                    week_day=week_day_end,
-                    start_time=time(0, 0),
-                    end_time=convtime2.time()))
+                retlist.extend(
+                    (
+                        dict(
+                            week_day=week_day_start,
+                            start_time=convtime1.time(),
+                            end_time=time(23, 59),
+                        ),
+                        dict(
+                            week_day=week_day_end,
+                            start_time=time(0, 0),
+                            end_time=convtime2.time(),
+                        ),
+                    )
+                )
 
         return sorted(
             retlist,
@@ -600,7 +616,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
         for el in self.inactiveperiod:
             d1, d2 = (el.get('start_date'), el.get('end_date'))
             newdict = dict(start_date=d1, end_date=d2)
-            if include_past_periods or newdict['end_date'] > datetime.today():
+            if include_past_periods or newdict['end_date'] > datetime.now():
                 retval.append(newdict)
         return retval
 
@@ -635,10 +651,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
             icon_url = config['default_avatar_image']
             icon_source = 'default'
 
-        if return_more:
-            return icon_url, private_project, icon_source
-        else:
-            return icon_url
+        return (icon_url, private_project, icon_source) if return_more else icon_url
 
     @classmethod
     def upsert(cls, username):
@@ -664,14 +677,13 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
         if len(users) > 1:
             log.warn('Multiple active users matching confirmed email %s %s. '
                      'Using first one', [u.username for u in users], addr)
-        return users[0] if len(users) > 0 else None
+        return users[0] if users else None
 
     @classmethod
     def by_username(cls, name):
         if not name:
             return cls.anonymous()
-        user = cls.query.get(username=name)
-        if user:
+        if user := cls.query.get(username=name):
             return user
         return plugin.AuthenticationProvider.get(request).by_username(name)
 
@@ -688,8 +700,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
     def claim_address(self, email_address):
         addr = EmailAddress.canonical(email_address)
-        email_addr = EmailAddress.create(addr)
-        if email_addr:
+        if email_addr := EmailAddress.create(addr):
             email_addr.claimed_by_user_id = self._id
             if addr not in self.email_addresses:
                 self.email_addresses.append(addr)
@@ -750,7 +761,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
     @property
     def script_name(self):
-        return '/u/' + self.username + '/'
+        return f'/u/{self.username}/'
 
     def my_projects(self):
         if self.is_anonymous():
@@ -801,7 +812,7 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
         h = header.Header()
         h.append('"%s"%s' % (self.get_pref('display_name'),
                              ' ' if six.PY2 else ''))  # py2 needs explicit space for unicode/text_type cast of Header
-        h.append('<%s>' % self.get_pref('email_address'))
+        h.append(f"<{self.get_pref('email_address')}>")
         return h
 
     def update_notifications(self):
@@ -828,9 +839,12 @@ class User(MappedClass, ActivityNode, ActivityObject, SearchIndexable):
 
 
 class OldProjectRole(MappedClass):
+
+
+
     class __mongometa__:
         session = project_orm_session
-        name = str('user')
+        name = 'user'
         unique_indexes = [('user_id', 'project_id', 'name')]
 
 
@@ -879,8 +893,8 @@ class ProjectRole(MappedClass):
                 uname = u.get_pref('display_name')
             else:
                 uname = u._id
-            return '*user-%s' % uname
-        return '**unknown name role: %s' % self._id  # pragma no cover
+            return f'*user-{uname}'
+        return f'**unknown name role: {self._id}'
 
     @classmethod
     def by_user(cls, user, project=None, upsert=False):
@@ -905,14 +919,8 @@ class ProjectRole(MappedClass):
             project = c.project
         if hasattr(project, 'root_project'):
             project = project.root_project
-        if hasattr(project, '_id'):
-            project_id = project._id
-        else:
-            project_id = project
-        role = cls.query.get(
-            name=name,
-            project_id=project_id)
-        return role
+        project_id = project._id if hasattr(project, '_id') else project
+        return cls.query.get(name=name, project_id=project_id)
 
     @classmethod
     def anonymous(cls, project=None):
@@ -937,11 +945,7 @@ class ProjectRole(MappedClass):
 
     @property
     def special(self):
-        if self.name:
-            return '*' == self.name[0]
-        if self.user_id:
-            return True
-        return False  # pragma no cover
+        return self.name[0] == '*' if self.name else bool(self.user_id)
 
     @property
     def user(self):
@@ -955,7 +959,7 @@ class ProjectRole(MappedClass):
     def settings_href(self):
         if self.name in ('Admin', 'Developer', 'Member'):
             return None
-        return self.project.url() + 'admin/groups/' + str(self._id) + '/'
+        return f'{self.project.url()}admin/groups/{str(self._id)}/'
 
     def parent_roles(self):
         return self.query.find({'roles': self._id}).all()
@@ -979,14 +983,15 @@ class ProjectRole(MappedClass):
 
 
 audit_log = collection(
-    str('audit_log'), main_doc_session,
+    'audit_log',
+    main_doc_session,
     Field('_id', S.ObjectId()),
-    Field('project_id', S.ObjectId, if_missing=None,
-          index=True),  # main view of audit log queries by project_id
+    Field('project_id', S.ObjectId, if_missing=None, index=True),
     Field('user_id', S.ObjectId, if_missing=None, index=True),
     Field('timestamp', datetime, if_missing=datetime.utcnow),
     Field('url', str),
-    Field('message', str))
+    Field('message', str),
+)
 
 
 class AuditLog(object):
@@ -1002,11 +1007,15 @@ class AuditLog(object):
             'User-Agent:',
         )
         with_br = h.nl2br_jinja_filter(self.message)
-        message_bold = '<br>\n'.join([
-            line if line.startswith(standard_metadata_prefixes) else '<strong>{}</strong>'.format(line)
-            for line in
-            with_br.split('<br>\n')
-        ])
+        message_bold = '<br>\n'.join(
+            [
+                line
+                if line.startswith(standard_metadata_prefixes)
+                else f'<strong>{line}</strong>'
+                for line in with_br.split('<br>\n')
+            ]
+        )
+
         return Markup(message_bold)
 
     @property
@@ -1014,11 +1023,11 @@ class AuditLog(object):
         scheme, netloc, path, params, query, fragment = urlparse(self.url)
         s = path
         if params:
-            s += ';' + params
+            s += f';{params}'
         if query:
-            s += '?' + query
+            s += f'?{query}'
         if fragment:
-            s += '#' + fragment
+            s += f'#{fragment}'
         return s
 
     @classmethod
@@ -1046,7 +1055,7 @@ class AuditLog(object):
 
     @classmethod
     def comment_user(cls, by, message, *args, **kwargs):
-        message = 'Comment by %s: %s' % (by.username, message)
+        message = f'Comment by {by.username}: {message}'
         return cls.log_user(message, *args, **kwargs)
 
 
@@ -1057,6 +1066,8 @@ main_orm_session.mapper(AuditLog, audit_log, properties=dict(
     user=RelationProperty('User')))
 
 
+
+
 class UserLoginDetails(MappedClass):
     """
     Store unique entries for users' previous login details.
@@ -1064,12 +1075,15 @@ class UserLoginDetails(MappedClass):
     Used to help determine if new logins are suspicious or not
     """
 
+
+
     class __mongometa__:
-        name = str('user_login_details')
+        name = 'user_login_details'
         session = main_explicitflush_orm_session
         indexes = ['user_id']
         unique_indexes = [('user_id', 'ip', 'ua'),  # DuplicateKeyError checked in add_login_detail
                           ]
+
 
     _id = FieldProperty(S.ObjectId)
     user_id = AlluraUserProperty(required=True)

@@ -204,8 +204,9 @@ class PackagePathLoader(jinja2.BaseLoader):
                     order_rules.append((rule[1], ep.name))
                 else:
                     raise jinja2.TemplateError(
-                        'Unknown template path rule in %s: %s' % (
-                            ep.name, ' '.join(rule)))
+                        f"Unknown template path rule in {ep.name}: {' '.join(rule)}"
+                    )
+
         return order_rules, replacement_rules
 
     def _sort_paths(self, paths, rules):
@@ -278,9 +279,8 @@ class PackagePathLoader(jinja2.BaseLoader):
                 # fall-back to attempt non-override loading
                 pass
 
-        if ':' in template:
-            package, path = template.split(':', 2)
-            filename = pkg_resources.resource_filename(package, path)
-            return self.fs_loader.get_source(environment, filename)
-        else:
+        if ':' not in template:
             return self.fs_loader.get_source(environment, template)
+        package, path = template.split(':', 2)
+        filename = pkg_resources.resource_filename(package, path)
+        return self.fs_loader.get_source(environment, filename)

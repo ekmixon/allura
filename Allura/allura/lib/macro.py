@@ -68,32 +68,27 @@ class parse(object):
             try:
                 parts = h.shlex_split(s)
                 if not parts:
-                    return '[[' + s + ']]'
+                    return f'[[{s}]]'
                 macro = self._lookup_macro(parts[0])
                 if not macro:
-                    return '[[' + s + ']]'
+                    return f'[[{s}]]'
                 for t in parts[1:]:
                     if '=' not in t:
-                        return '[-%s: missing =-]' % ' '.join(parts)
+                        return f"[-{' '.join(parts)}: missing =-]"
                 args = dict(t.split('=', 1) for t in parts[1:])
-                response = macro(**h.encode_keys(args))
-                return response
+                return macro(**h.encode_keys(args))
             except (ValueError, TypeError) as ex:
                 log.warn('macro error.  Upwards stack is %s',
                          ''.join(traceback.format_stack()),
                          exc_info=True)
-                msg = cgi.escape('[[%s]] (%s)' % (s, repr(ex)))
+                msg = cgi.escape(f'[[{s}]] ({repr(ex)})')
                 return '\n<div class="error"><pre><code>%s</code></pre></div>' % msg
         except Exception as ex:
             raise
-            return '[[Error parsing %s: %s]]' % (s, ex)
 
     def _lookup_macro(self, s):
         macro, context = _macros.get(s, (None, None))
-        if context is None or context == self._context:
-            return macro
-        else:
-            return None
+        return macro if context is None or context == self._context else None
 
 
 @macro('neighborhood-wiki')
@@ -114,8 +109,7 @@ def neighborhood_feeds(tool_name, max_number=5, sort='pubdate'):
         for item in feed)
     feeds = NeighborhoodFeeds(feeds=output)
     g.resource_manager.register(feeds)
-    response = feeds.display(feeds=output)
-    return response
+    return feeds.display(feeds=output)
 
 
 @macro('neighborhood-wiki')
@@ -138,18 +132,20 @@ def neighborhood_blog_posts(max_number=5, sort='timestamp', summary=False):
 
     posts = BlogPosts(posts=output)
     g.resource_manager.register(posts)
-    response = posts.display(posts=output)
-    return response
+    return posts.display(posts=output)
 
 
 @macro()
 def project_blog_posts(max_number=5, sort='timestamp', summary=False, mount_point=None):
     from forgeblog import model as BM
     from allura.lib.widgets.macros import BlogPosts
-    app_config_ids = []
-    for conf in c.project.app_configs:
-        if conf.tool_name.lower() == 'blog' and (mount_point is None or conf.options.mount_point == mount_point):
-            app_config_ids.append(conf._id)
+    app_config_ids = [
+        conf._id
+        for conf in c.project.app_configs
+        if conf.tool_name.lower() == 'blog'
+        and (mount_point is None or conf.options.mount_point == mount_point)
+    ]
+
     posts = BM.BlogPost.query.find({
         'app_config_id': {'$in': app_config_ids},
         'state': 'published',
@@ -165,8 +161,7 @@ def project_blog_posts(max_number=5, sort='timestamp', summary=False, mount_poin
         security.has_access(post.app.project, 'read', project=post.app.project)())
     posts = BlogPosts(posts=output)
     g.resource_manager.register(posts)
-    response = posts.display(posts=output)
-    return response
+    return posts.display(posts=output)
 
 
 def get_projects_for_macro(
@@ -183,7 +178,7 @@ def get_projects_for_macro(
     q = dict(
         deleted=False,
         is_nbhd_project=False)
-    q.update(initial_q)
+    q |= initial_q
 
     if labels:
         or_labels = labels.split('|')
@@ -191,10 +186,12 @@ def get_projects_for_macro(
     if trove is not None:
         trove = M.TroveCategory.query.get(fullpath=trove)
     if award:
-        aw = M.Award.query.find(dict(
-            created_by_neighborhood_id=c.project.neighborhood_id,
-            short=award)).first()
-        if aw:
+        if aw := M.Award.query.find(
+            dict(
+                created_by_neighborhood_id=c.project.neighborhood_id,
+                short=award,
+            )
+        ).first():
             ids = [grant.granted_to_project_id for grant in
                    M.AwardGrant.query.find(dict(
                        granted_by_neighborhood_id=c.project.neighborhood_id,
@@ -204,17 +201,14 @@ def get_projects_for_macro(
             q['_id'] = {'$in': ids}
 
     if trove is not None:
-        q['trove_' + trove.type] = trove._id
+        q[f'trove_{trove.type}'] = trove._id
     sort_key, sort_dir = 'last_updated', pymongo.DESCENDING
     if sort == 'alpha':
         sort_key, sort_dir = 'name', pymongo.ASCENDING
     elif sort == 'random':
         sort_key, sort_dir = None, None
-    elif sort == 'last_registered':
+    elif sort in ['last_registered', '_id']:
         sort_key, sort_dir = '_id', pymongo.DESCENDING
-    elif sort == '_id':
-        sort_key, sort_dir = '_id', pymongo.DESCENDING
-
     projects = []
     if private:
         # Only return private projects.
@@ -240,8 +234,7 @@ def get_projects_for_macro(
             from ming.orm import mapper
             m = mapper(M.Project)
             collection = M.main_doc_session.db[m.collection.m.collection_name]
-            docs = list(collection.find(q, {'_id': 1}))
-            if docs:
+            if docs := list(collection.find(q, {'_id': 1})):
                 ids = [doc['_id'] for doc in
                        random.sample(docs, min(limit, len(docs)))]
                 if '_id' in q:
@@ -297,10 +290,7 @@ def my_projects(category=None, sort='last_updated',
     if myproj_user is None:
         myproj_user = c.user.anonymous()
 
-    ids = []
-    for p in myproj_user.my_projects():
-        ids.append(p._id)
-
+    ids = [p._id for p in myproj_user.my_projects()]
     initial_q = dict(_id={'$in': ids})
     return get_projects_for_macro(
         category=category, sort=sort,
@@ -315,8 +305,7 @@ def project_screenshots():
     from allura.lib.widgets.project_list import ProjectScreenshots
     ps = ProjectScreenshots()
     g.resource_manager.register(ps)
-    response = ps.display(project=c.project, h=h)
-    return response
+    return ps.display(project=c.project, h=h)
 
 
 @macro()
@@ -324,8 +313,7 @@ def gittip_button(username):
     from allura.lib.widgets.macros import GittipButton
     button = GittipButton(username=username)
     g.resource_manager.register(button)
-    response = button.display(username=username)
-    return response
+    return button.display(username=username)
 
 
 def parse_repo(repo):
@@ -336,7 +324,7 @@ def parse_repo(repo):
     project, app = c.project, None
     nbhd = c.project.neighborhood if c.project else None
     if len(parts) == 3:
-        nbhd = M.Neighborhood.query.get(url_prefix='/' + parts[0] + '/')
+        nbhd = M.Neighborhood.query.get(url_prefix=f'/{parts[0]}/')
         project = M.Project.query.get(
             shortname=parts[1],
             neighborhood_id=nbhd._id) if nbhd else None
@@ -354,7 +342,7 @@ def parse_repo(repo):
 def include_file(repo, path=None, rev=None, **kw):
     app = parse_repo(repo)
     if not app:
-        return '[[include repo %s (not found)]]' % repo
+        return f'[[include repo {repo} (not found)]]'
     if not h.has_access(app.repo, 'read')():
         return "[[include: you don't have a read permission for repo %s]]" % repo
 
@@ -388,7 +376,7 @@ def include(ref=None, repo=None, **kw):
         return '[-include-]'
     link = M.Shortlink.lookup(ref)
     if not link:
-        return '[[include %s (not found)]]' % ref
+        return f'[[include {ref} (not found)]]'
     artifact = link.ref.artifact
     if artifact is None:
         return '[[include (artifact not found)]]' % ref
@@ -396,13 +384,12 @@ def include(ref=None, repo=None, **kw):
         return "[[include: you don't have a read permission for %s]]" % ref
     included = request.environ.setdefault('allura.macro.included', set())
     if artifact in included:
-        return '[[include %s (already included)]' % ref
+        return f'[[include {ref} (already included)]'
     else:
         included.add(artifact)
     sb = Include()
     g.resource_manager.register(sb)
-    response = sb.display(artifact=artifact, attrs=kw)
-    return response
+    return sb.display(artifact=artifact, attrs=kw)
 
 
 @macro()
@@ -426,8 +413,7 @@ def project_admins():
         for user in admins)
     users = ProjectAdmins(users=output)
     g.resource_manager.register(users)
-    response = users.display(users=output)
-    return response
+    return users.display(users=output)
 
 
 @macro()
@@ -446,17 +432,22 @@ def members(limit=20):
     over_limit = len(members) > limit
     users = Members(users=output, over_limit=over_limit)
     g.resource_manager.register(users)
-    response = users.display(users=output, over_limit=over_limit)
-    return response
+    return users.display(users=output, over_limit=over_limit)
 
 
 @macro()
 def embed(url=None):
     consumer = oembed.OEmbedConsumer()
-    endpoint = oembed.OEmbedEndpoint('https://www.youtube.com/oembed',
-                                     [str('http://*.youtube.com/*'), str('https://*.youtube.com/*'),
-                                      str('http://*.youtube-nocookie.com/*'), str('https://*.youtube-nocookie.com/*'),
-                                      ])
+    endpoint = oembed.OEmbedEndpoint(
+        'https://www.youtube.com/oembed',
+        [
+            'http://*.youtube.com/*',
+            'https://*.youtube.com/*',
+            'http://*.youtube-nocookie.com/*',
+            'https://*.youtube-nocookie.com/*',
+        ],
+    )
+
     consumer.addEndpoint(endpoint)
 
     # workaround for https://github.com/abarmat/python-oembed/pull/9 not being implemented yet
@@ -467,14 +458,13 @@ def embed(url=None):
         except oembed.OEmbedNoEndpoint:
             html = None
         except oembed.OEmbedError:
-            log.exception('Could not embed: {}'.format(url))
-            return 'Could not embed: {}'.format(url)
+            log.exception(f'Could not embed: {url}')
+            return f'Could not embed: {url}'
         except six.moves.urllib.error.HTTPError as e:
             if e.code in (403, 404):
                 return 'Video not available'
-            else:
-                log.exception('Could not embed: {}'.format(url))
-                return 'Could not embed: {}'.format(url)
+            log.exception(f'Could not embed: {url}')
+            return f'Could not embed: {url}'
 
     if html:
         # youtube has a trailing ")" at the moment
@@ -483,8 +473,7 @@ def embed(url=None):
         # convert iframe src from http to https, to avoid mixed security blocking when used on an https page
         # and convert to youtube-nocookie.com
         html = BeautifulSoup(html, 'html.parser')
-        embed_url = html.find('iframe').get('src')
-        if embed_url:
+        if embed_url := html.find('iframe').get('src'):
             embed_url = urlparse(embed_url)
             if embed_url.scheme == 'http':
                 embed_url = urlunparse(['https'] + list(embed_url[1:]))
@@ -492,6 +481,6 @@ def embed(url=None):
                 embed_url = embed_url.geturl()
             embed_url = embed_url.replace('www.youtube.com', 'www.youtube-nocookie.com')
             html.find('iframe')['src'] = embed_url
-        return jinja2.Markup('<p>%s</p>' % html)
+        return jinja2.Markup(f'<p>{html}</p>')
 
-    return '[[embed url=%s]]' % url
+    return f'[[embed url={url}]]'

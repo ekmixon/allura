@@ -45,12 +45,12 @@ class SearchController(BaseController):
     @with_trailing_slash
     def index(self, q=None, history=False, **kw):
         c.search_results = W.search_results
-        search_params = kw
-        search_params.update({
+        search_params = kw | {
             'q': q,
             'history': history,
             'app': False,
-        })
+        }
+
         d = search_app(**search_params)
         d['search_comments_disable'] = True
         d['hide_app_project_switcher'] = True
@@ -77,7 +77,7 @@ class ProjectBrowseController(BaseController):
         if self.category:
             title = self.category.label
             if self.parent_category:
-                title = "%s: %s" % (self.parent_category.label, title)
+                title = f"{self.parent_category.label}: {title}"
         return title
 
     def _build_nav(self):
@@ -91,11 +91,14 @@ class ProjectBrowseController(BaseController):
             ))
             if (self.category and self.category._id == cat._id and cat.subcategories) or (
                     self.parent_category and self.parent_category._id == cat._id):
-                for subcat in cat.subcategories:
-                    nav.append(SitemapEntry(
+                nav.extend(
+                    SitemapEntry(
                         subcat.label,
                         self.nav_stub + cat.name + '/' + subcat.name,
-                    ))
+                    )
+                    for subcat in cat.subcategories
+                )
+
         return nav
 
     def _find_projects(self, sort='alpha', limit=None, start=0):
@@ -104,7 +107,7 @@ class ProjectBrowseController(BaseController):
             # warning! this is written with the assumption that categories
             # are only two levels deep like the existing site
             if self.category.subcategories:
-                ids = ids + [cat._id for cat in self.category.subcategories]
+                ids += [cat._id for cat in self.category.subcategories]
             pq = M.Project.query.find(
                 dict(category_id={'$in': ids}, deleted=False, **self.additional_filters))
         else:
@@ -115,10 +118,7 @@ class ProjectBrowseController(BaseController):
         else:
             pq.sort('last_updated', pymongo.DESCENDING)
         count = pq.count()
-        if limit:
-            projects = pq.skip(start).limit(int(limit)).all()
-        else:
-            projects = pq.all()
+        projects = pq.skip(start).limit(int(limit)).all() if limit else pq.all()
         return (projects, count)
 
     @expose()

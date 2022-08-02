@@ -110,8 +110,7 @@ class MonQTask(MappedClass):
         project = M.Project.query.get(_id=self.context.project_id)
         app = None
         if project:
-            app_config = M.AppConfig.query.get(_id=self.context.app_config_id)
-            if app_config:
+            if app_config := M.AppConfig.query.get(_id=self.context.app_config_id):
                 app = project.app_instance(app_config)
         user = M.User.query.get(_id=self.context.user_id)
         project_url = project and project.url() or None
@@ -150,9 +149,7 @@ class MonQTask(MappedClass):
             args = ()
         if kwargs is None:
             kwargs = {}
-        task_name = '%s.%s' % (
-            function.__module__,
-            function.__name__)
+        task_name = f'{function.__module__}.{function.__name__}'
         context = dict(
             project_id=None,
             app_config_id=None,
@@ -244,9 +241,9 @@ class MonQTask(MappedClass):
             if c.project:
                 c.project.notifications_disabled = self.context.get(
                     'notifications_disabled', False)
-                app_config = M.AppConfig.query.get(
-                    _id=self.context.app_config_id)
-                if app_config:
+                if app_config := M.AppConfig.query.get(
+                    _id=self.context.app_config_id
+                ):
                     c.app = c.project.app_instance(app_config)
             c.user = M.User.query.get(_id=self.context.user_id)
             with null_contextmanager() if nocapture else log_output(log):
@@ -256,14 +253,13 @@ class MonQTask(MappedClass):
         except Exception as exc:
             if asbool(config.get('monq.raise_errors')):
                 raise
+            log.exception('Error "%s" on job %s', exc, self)
+            self.state = 'error'
+            if hasattr(exc, 'format_error'):
+                self.result = exc.format_error()
+                log.error(self.result)
             else:
-                log.exception('Error "%s" on job %s', exc, self)
-                self.state = 'error'
-                if hasattr(exc, 'format_error'):
-                    self.result = exc.format_error()
-                    log.error(self.result)
-                else:
-                    self.result = traceback.format_exc()
+                self.result = traceback.format_exc()
         finally:
             self.time_stop = datetime.utcnow()
             session(self).flush(self)

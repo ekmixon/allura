@@ -46,9 +46,8 @@ class ProjectSummary(ew_core.Widget):
         response = super(ProjectSummary, self).prepare_context(context)
         value = response['value']
 
-        if response['icon_url'] is None:
-            if value.icon:
-                response['icon_url'] = value.icon_url()
+        if response['icon_url'] is None and value.icon:
+            response['icon_url'] = value.icon_url()
         if response['accolades'] is None:
             response['accolades'] = value.accolades
 
@@ -57,20 +56,16 @@ class ProjectSummary(ew_core.Widget):
 
         true_list = ['true', 't', '1', 'yes', 'y']
         if isinstance(response['show_proj_icon'], six.text_type):
-            if response['show_proj_icon'].lower() in true_list:
-                response['show_proj_icon'] = True
-            else:
-                response['show_proj_icon'] = False
+            response['show_proj_icon'] = response['show_proj_icon'].lower() in true_list
         if isinstance(response['show_download_button'], six.text_type):
-            if response['show_download_button'].lower() in true_list:
-                response['show_download_button'] = True
-            else:
-                response['show_download_button'] = False
+            response['show_download_button'] = (
+                response['show_download_button'].lower() in true_list
+            )
+
         if isinstance(response['show_awards_banner'], six.text_type):
-            if response['show_awards_banner'].lower() in true_list:
-                response['show_awards_banner'] = True
-            else:
-                response['show_awards_banner'] = False
+            response['show_awards_banner'] = (
+                response['show_awards_banner'].lower() in true_list
+            )
 
         return response
 
@@ -110,8 +105,7 @@ class ProjectList(ew_core.Widget):
         return response
 
     def resources(self):
-        for r in self.project_summary.resources():
-            yield r
+        yield from self.project_summary.resources()
 
 
 class ProjectScreenshots(ew_core.Widget):

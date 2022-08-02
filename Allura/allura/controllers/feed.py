@@ -76,10 +76,14 @@ class FeedController(object):
         raise AttributeError(name)
 
     def _get_feed_type(self, request):
-        for typ in self.FEED_TYPES:
-            if request.environ['PATH_INFO'].endswith(typ):
-                return typ.lstrip('.')
-        return 'rss'
+        return next(
+            (
+                typ.lstrip('.')
+                for typ in self.FEED_TYPES
+                if request.environ['PATH_INFO'].endswith(typ)
+            ),
+            'rss',
+        )
 
     @without_trailing_slash
     @expose()
@@ -101,8 +105,8 @@ class FeedController(object):
             feed_def.url,
             feed_def.description,
             since, until, page, limit)
-        response.headers['Content-Type'] = str('')
-        response.content_type = str('application/xml')
+        response.headers['Content-Type'] = ''
+        response.content_type = 'application/xml'
         return feed.writeString('utf-8')
 
     def get_feed(self, project, app, user):
@@ -118,5 +122,6 @@ class FeedController(object):
         """
         return FeedArgs(
             dict(project_id=project._id, app_config_id=app.config._id),
-            'Recent changes to %s' % app.config.options.mount_point,
-            app.url)
+            f'Recent changes to {app.config.options.mount_point}',
+            app.url,
+        )

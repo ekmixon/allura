@@ -79,13 +79,12 @@ class StaticFilesMiddleware(object):
             if environ['PATH_INFO'].startswith(prefix):
                 filename = environ['PATH_INFO'][len(prefix):]
                 resource_path = os.path.join('nf', ep.name.lower(), filename)
-                resource_cls = ep.load().has_resource(resource_path)
-                if resource_cls:
+                if resource_cls := ep.load().has_resource(resource_path):
                     file_path = pkg_resources.resource_filename(resource_cls.__module__, resource_path)
-                    return fileapp.FileApp(file_path, [(str('Access-Control-Allow-Origin'), str('*'))])
+                    return fileapp.FileApp(file_path, [('Access-Control-Allow-Origin', '*')])
         filename = environ['PATH_INFO'][len(self.script_name):]
         file_path = pkg_resources.resource_filename('allura', os.path.join('public', 'nf', filename))
-        return fileapp.FileApp(file_path, [(str('Access-Control-Allow-Origin'), str('*'))])
+        return fileapp.FileApp(file_path, [('Access-Control-Allow-Origin', '*')])
 
 
 class CORSMiddleware(object):
@@ -94,11 +93,11 @@ class CORSMiddleware(object):
     def __init__(self, app, allowed_methods, allowed_headers, cache=None):
         self.app = app
         self.allowed_methods = [m.upper() for m in allowed_methods]
-        self.allowed_headers = set(h.lower() for h in allowed_headers)
+        self.allowed_headers = {h.lower() for h in allowed_headers}
         self.cache_preflight = cache or None
 
     def __call__(self, environ, start_response):
-        is_api_request = environ.get('PATH_INFO', '').startswith(str('/rest/'))
+        is_api_request = environ.get('PATH_INFO', '').startswith('/rest/')
         valid_cors = 'HTTP_ORIGIN' in environ
         if not is_api_request or not valid_cors:
             return self.app(environ, start_response)
@@ -127,23 +126,24 @@ class CORSMiddleware(object):
         return r(environ, start_response)
 
     def get_response_headers(self, preflight=False):
-        headers = [(str('Access-Control-Allow-Origin'), str('*'))]
+        headers = [('Access-Control-Allow-Origin', '*')]
         if preflight:
             ac_methods = ', '.join(self.allowed_methods)
             ac_headers = ', '.join(sorted(self.allowed_headers))
-            headers.extend([
-                (str('Access-Control-Allow-Methods'), str(ac_methods)),
-                (str('Access-Control-Allow-Headers'), str(ac_headers)),
-            ])
+            headers.extend(
+                [
+                    ('Access-Control-Allow-Methods', ac_methods),
+                    ('Access-Control-Allow-Headers', ac_headers),
+                ]
+            )
+
             if self.cache_preflight:
-                headers.append(
-                    (str('Access-Control-Max-Age'), str(self.cache_preflight))
-                )
+                headers.append(('Access-Control-Max-Age', str(self.cache_preflight)))
         return headers
 
     def get_access_control_request_headers(self, environ):
         headers = environ.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS', '')
-        return set(h.strip().lower() for h in headers.split(',') if h.strip())
+        return {h.strip().lower() for h in headers.split(',') if h.strip()}
 
 
 class LoginRedirectMiddleware(object):
@@ -157,7 +157,7 @@ class LoginRedirectMiddleware(object):
 
     def __call__(self, environ, start_response):
         status, headers, app_iter, exc_info = call_wsgi_application(self.app, environ)
-        is_api_request = environ.get('PATH_INFO', '').startswith(str('/rest/'))
+        is_api_request = environ.get('PATH_INFO', '').startswith('/rest/')
         if status[:3] == '401' and not is_api_request and not is_ajax(Request(environ)):
             login_url = tg.config.get('auth.login_url', '/auth/')
             if environ['REQUEST_METHOD'] == 'GET':
@@ -219,8 +219,12 @@ class CSRFMiddleware(object):
             if dict(headers).get('Content-Type', '').startswith('text/html'):
                 use_secure = 'secure; ' if environ['beaker.session'].secure else ''
                 headers.append(
-                    (str('Set-cookie'),
-                     str('%s=%s; %sPath=/' % (self._cookie_name, cookie, use_secure))))
+                    (
+                        'Set-cookie',
+                        str(f'{self._cookie_name}={cookie}; {use_secure}Path=/'),
+                    )
+                )
+
             return start_response(status, headers, exc_info)
 
         return self._app(environ, session_start_response)
@@ -258,15 +262,15 @@ class SSLMiddleware(object):
             srv_path = req.url.split('://', 1)[-1]
             # allura-loggedin is a non-secure cookie as a flag to know that the user has a session over on https
             force_ssl = (self._force_ssl_logged_in and req.cookies.get('allura-loggedin')) \
-                        or self._force_ssl_re.match(environ['PATH_INFO'])
+                            or self._force_ssl_re.match(environ['PATH_INFO'])
             if req.environ.get('tg.original_request'):
                 # if an error occurs, then /error/document is fetched (denoted by tg.original_request)
                 # and we don't want to do any redirects within that sub-request
                 pass
             elif not secure and force_ssl:
-                resp = exc.HTTPFound(location='https://' + srv_path)
+                resp = exc.HTTPFound(location=f'https://{srv_path}')
             elif secure and not force_ssl:
-                resp = exc.HTTPFound(location='http://' + srv_path)
+                resp = exc.HTTPFound(location=f'http://{srv_path}')
             if not resp:
                 resp = self.app
         return resp(environ, start_response)
@@ -291,7 +295,7 @@ class SetRequestHostFromConfig(object):
         try:
             req.params  # check for malformed unicode or POSTs, this is the first middleware that might trip over it.
             resp = self.app
-        except (UnicodeError, ValueError):
+        except ValueError:
             resp = exc.HTTPBadRequest()
 
         return resp(environ, start_response)
@@ -429,12 +433,12 @@ class RememberLoginMiddleware(object):
                     session._set_cookie_expires(login_expires)
                 # Replace the cookie header that SessionMiddleware set
                 # with one that has the new expires parameter value
-                cookie = session.cookie[session.key].output(header=str(''))
+                cookie = session.cookie[session.key].output(header='')
                 for i in range(len(headers)):
                     header, contents = headers[i]
                     if header == 'Set-cookie' and \
-                            contents.lstrip().startswith(session.key):
-                        headers[i] = (str('Set-cookie'), cookie)
+                                contents.lstrip().startswith(session.key):
+                        headers[i] = 'Set-cookie', cookie
                         break
             return start_response(status, headers, exc_info)
 

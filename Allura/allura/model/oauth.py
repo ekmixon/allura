@@ -105,8 +105,12 @@ class OAuthConsumerToken(OAuthToken):
 
 class OAuthRequestToken(OAuthToken):
 
+
+
+
     class __mongometa__:
-        polymorphic_identity = str('request')
+        polymorphic_identity = 'request'
+
 
     type = FieldProperty(str, if_missing='request')
     consumer_token_id = ForeignIdProperty('OAuthConsumerToken')
@@ -141,6 +145,4 @@ class OAuthAccessToken(OAuthToken):
 
     def can_import_forum(self):
         tokens = aslist(config.get('oauth.can_import_forum', ''), ',')
-        if self.api_key in tokens:
-            return True
-        return False
+        return self.api_key in tokens

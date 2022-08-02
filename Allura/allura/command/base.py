@@ -58,8 +58,8 @@ class EmptyClass(object):
 
 class MetaParserDocstring(type):
     @property
-    def __doc__(cls):
-        return cls.parser.format_help()
+    def __doc__(self):
+        return self.parser.format_help()
 
 
 class Command(six.with_metaclass(MetaParserDocstring, command.Command)):
@@ -70,7 +70,7 @@ class Command(six.with_metaclass(MetaParserDocstring, command.Command)):
 
     @classmethod
     def post(cls, *args, **kw):
-        cmd = '%s.%s' % (cls.__module__, cls.__name__)
+        cmd = f'{cls.__module__}.{cls.__name__}'
         return run_command.post(cmd, *args, **kw)
 
     @ming.utils.LazyProperty
@@ -92,8 +92,10 @@ class Command(six.with_metaclass(MetaParserDocstring, command.Command)):
         if self.args[0]:
             # Probably being called from the command line - load the config
             # file
-            self.config = conf = appconfig('config:%s' %
-                                           self.args[0], relative_to=os.getcwd())
+            self.config = conf = appconfig(
+                f'config:{self.args[0]}', relative_to=os.getcwd()
+            )
+
             # ... logging does not understand section#subsection syntax
             logging_config = self.args[0].split('#')[0]
             logging.config.fileConfig(

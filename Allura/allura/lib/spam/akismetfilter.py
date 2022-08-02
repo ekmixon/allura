@@ -79,8 +79,7 @@ class AkismetSpamFilter(SpamFilter):
                 date_created = artifact.mod_date
             kw['comment_date_gmt'] = date_created.isoformat()
             kw['comment_post_modified_gmt'] = artifact.primary().mod_date.isoformat()
-        user = user or c.user
-        if user:
+        if user := user or c.user:
             kw['comment_author'] = user.display_name or user.username
             kw['comment_author_email'] = user.email_addresses[0] if user.email_addresses else ''
         if request is not None:

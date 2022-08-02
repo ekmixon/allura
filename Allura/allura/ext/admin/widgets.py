@@ -132,23 +132,26 @@ class ScreenshotAdmin(ff.ForgeFormResponsive):
 
     @property
     def fields(self):
-        fields = [
-            ew.InputField(name='screenshot', field_type='file',
-                          label='New Screenshot', 
-                          attrs={
-                              'accept': 'image/*',
-                              'required': 'true',
-                              }),
-            ew.InputField(name='caption',
-                          field_type="text",
-                          label='Caption',
-                          attrs={
-                              'title': "Reuse your project name in screenshot file names and create a caption to briefly describe each screenshot.",
-                              'class': 'm-tooltip',
-                          }
-                          )
+        return [
+            ew.InputField(
+                name='screenshot',
+                field_type='file',
+                label='New Screenshot',
+                attrs={
+                    'accept': 'image/*',
+                    'required': 'true',
+                },
+            ),
+            ew.InputField(
+                name='caption',
+                field_type="text",
+                label='Caption',
+                attrs={
+                    'title': "Reuse your project name in screenshot file names and create a caption to briefly describe each screenshot.",
+                    'class': 'm-tooltip',
+                },
+            ),
         ]
-        return fields
 
 
 class FeaturesField(ew.CompoundField):
@@ -243,8 +246,7 @@ class AuditLog(ew_core.Widget):
 
     def resources(self):
         for f in self.fields:
-            for r in f.resources():
-                yield r
+            yield from f.resources()
 
 
 class BlockUser(ffw.Lightbox):

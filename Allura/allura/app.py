@@ -79,14 +79,10 @@ class ConfigOption(object):
         """Return the default value for this ConfigOption.
 
         """
-        if callable(self._default):
-            return self._default()
-        return self._default
+        return self._default() if callable(self._default) else self._default
 
     def validate(self, value):
-        if self.validator:
-            return self.validator.to_python(value)
-        return value
+        return self.validator.to_python(value) if self.validator else value
 
     def render_attrs(self):
         """Return extra_attrs formatted in a way that allows inserting into html tag"""
@@ -147,12 +143,14 @@ class SitemapEntry(object):
         return self
 
     def __repr__(self):
-        l = ['<SitemapEntry ']
-        l.append('    label=%r' % self.label)
-        l.append('    url=%r' % self.url)
-        l.append('    children=%s' %
-                 repr(self.children).replace('\n', '\n    '))
-        l.append('>')
+        l = [
+            '<SitemapEntry ',
+            '    label=%r' % self.label,
+            '    url=%r' % self.url,
+            ('    children=%s' % repr(self.children).replace('\n', '\n    ')),
+            '>',
+        ]
+
         return '\n'.join(l)
 
     def bind_app(self, app):
@@ -189,8 +187,7 @@ class SitemapEntry(object):
         children or our copy with the children of the new copy.
 
         """
-        child_index = dict(
-            (ch.label, ch) for ch in self.children)
+        child_index = {ch.label: ch for ch in self.children}
         for e in sitemap_entries:
             lbl = e.label
             match = child_index.get(e.label)
@@ -204,8 +201,9 @@ class SitemapEntry(object):
         """Return True if this SitemapEntry 'matches' the url of ``request``.
 
         """
-        return self.url in request.upath_info or any([
-            url in request.upath_info for url in self.matching_urls])
+        return self.url in request.upath_info or any(
+            url in request.upath_info for url in self.matching_urls
+        )
 
     def __json__(self):
         return dict(
@@ -344,9 +342,7 @@ class Application(object):
 
     @LazyProperty
     def admin_url(self):
-        return '{}{}/{}/'.format(
-            self.project.url(), 'admin',
-            self.config.options.mount_point)
+        return f'{self.project.url()}admin/{self.config.options.mount_point}/'
 
     @property
     def email_address(self):
@@ -363,7 +359,7 @@ class Application(object):
         """
         if self.config.options.get('AllowEmailPosting', True):
             parts = list(reversed(self.url[1:-1].split('/')))
-            return '%s@%s%s' % (parts[0], '.'.join(parts[1:]), config.common_suffix)
+            return f"{parts[0]}@{'.'.join(parts[1:])}{config.common_suffix}"
         else:
             return tg_config.get('forgemail.return_path')
 
@@ -440,13 +436,13 @@ class Application(object):
         return re.match(mount_point)
 
     @classmethod
-    def status_int(self):
+    def status_int(cls):
         """Return the :attr:`status` of this Application as an int.
 
         Used for sorting available Apps by status in the Admin interface.
 
         """
-        return self.status_map.index(self.status)
+        return cls.status_map.index(cls.status)
 
     @classmethod
     def icon_url(cls, size):
@@ -530,9 +526,7 @@ class Application(object):
         :rtype: dict
 
         """
-        return dict(
-            (co.name, co.default)
-            for co in cls.config_options)
+        return {co.name: co.default for co in cls.config_options}
 
     @classmethod
     def options_on_install(cls):
@@ -550,8 +544,10 @@ class Application(object):
         # Create the discussion object
         discussion = self.DiscussionClass(
             shortname=self.config.options.mount_point,
-            name='%s Discussion' % self.config.options.mount_point,
-            description='Forum for %s comments' % self.config.options.mount_point)
+            name=f'{self.config.options.mount_point} Discussion',
+            description=f'Forum for {self.config.options.mount_point} comments',
+        )
+
         session(discussion).flush()
         self.config.discussion_id = discussion._id
         self.subscribe_admins()
@@ -627,9 +623,11 @@ class Application(object):
         :return: a list of :class:`WebhookSender <allura.webhooks.WebhookSender>`
         """
         tool_name = self.config.tool_name.lower()
-        webhooks = [w for w in six.itervalues(g.entry_points['webhooks'])
-                    if tool_name in w.triggered_by]
-        return webhooks
+        return [
+            w
+            for w in six.itervalues(g.entry_points['webhooks'])
+            if tool_name in w.triggered_by
+        ]
 
     def admin_menu(self, force_options=False):
         """Return the admin menu for this Application.
@@ -651,29 +649,39 @@ class Application(object):
         :return: a list of :class:`SitemapEntries <allura.app.SitemapEntry>`
 
         """
-        admin_url = c.project.url() + 'admin/' + \
-            self.config.options.mount_point + '/'
+        admin_url = (
+            f'{c.project.url()}admin/' + self.config.options.mount_point
+        ) + '/'
+
         links = []
         if self.permissions and has_access(c.project, 'admin')():
-            links.append(
-                SitemapEntry('Permissions', admin_url + 'permissions'))
+            links.append(SitemapEntry('Permissions', f'{admin_url}permissions'))
         if force_options or len(self.config_options) > 3:
             links.append(
-                SitemapEntry('Options', admin_url + 'options', className='admin_modal'))
+                SitemapEntry(
+                    'Options', f'{admin_url}options', className='admin_modal'
+                )
+            )
+
         links.append(
-            SitemapEntry('Rename', admin_url + 'edit_label', className='admin_modal'))
+            SitemapEntry(
+                'Rename', f'{admin_url}edit_label', className='admin_modal'
+            )
+        )
+
         if len(self._webhooks) > 0:
-            links.append(SitemapEntry('Webhooks', admin_url + 'webhooks'))
+            links.append(SitemapEntry('Webhooks', f'{admin_url}webhooks'))
         return links
 
     @LazyProperty
     def admin_menu_collapse_button(self):
         """Returns button for showing/hiding admin sidebar menu"""
         return SitemapEntry(
-            label='Admin - {}'.format(self.config.options.mount_label),
+            label=f'Admin - {self.config.options.mount_label}',
             extra_html_attrs={
                 'id': 'sidebar-admin-menu-trigger',
-            })
+            },
+        )
 
     @LazyProperty
     def admin_menu_delete_button(self):
@@ -683,7 +691,7 @@ class Application(object):
         if self.uninstallable and not anchored:
             return SitemapEntry(
                 label='Delete Everything',
-                url=self.admin_url + 'delete',
+                url=f'{self.admin_url}delete',
                 className='admin_modal',
             )
 
@@ -730,12 +738,11 @@ class Application(object):
                 post_id=message_id,
                 artifact_id=message_id)
             return
-        # Handle duplicates (from multipart mail messages)
-        post = self.PostClass.query.get(_id=message_id)
-        if post:
+        if post := self.PostClass.query.get(_id=message_id):
             log.info(
-                'Existing message_id %s found - saving this as text attachment' %
-                message_id)
+                f'Existing message_id {message_id} found - saving this as text attachment'
+            )
+
 
             fp = BytesIO(six.ensure_binary(message['payload']))
             post.attach(
@@ -875,8 +882,7 @@ class DefaultAdminController(BaseController, AdminControllerMixin):
         unblocked = []
         for user in users:
             ace = model.ACE.deny(model.ProjectRole.by_user(user)._id, perm)
-            ace = model.ACL.contains(ace, self.app.acl)
-            if ace:
+            if ace := model.ACL.contains(ace, self.app.acl):
                 self.app.acl.remove(ace)
                 unblocked.append(str(user._id))
         return dict(unblocked=unblocked)
@@ -891,7 +897,7 @@ class DefaultAdminController(BaseController, AdminControllerMixin):
         c.card = PermissionCard()
         c.block_user = BlockUser()
         c.block_list = BlockList()
-        permissions = dict((p, []) for p in self.app.permissions)
+        permissions = {p: [] for p in self.app.permissions}
         block_list = defaultdict(list)
         for ace in self.app.config.acl:
             if ace.access == model.ACE.ALLOW:
@@ -971,7 +977,7 @@ class DefaultAdminController(BaseController, AdminControllerMixin):
                 try:
                     val = opt.validate(val)
                 except fev.Invalid as e:
-                    flash('{}: {}'.format(opt.name, str(e)), 'error')
+                    flash(f'{opt.name}: {str(e)}', 'error')
                     continue
                 self.app.config.options[opt.name] = val
             if is_admin:
@@ -1051,15 +1057,18 @@ class WebhooksLookup(BaseController, AdminControllerMixin):
         webhooks = self.app._webhooks
         if len(webhooks) == 0:
             raise exc.HTTPNotFound()
-        configured_hooks = {}
-        for hook in webhooks:
-            configured_hooks[hook.type] = M.Webhook.query.find({
-                'type': hook.type,
-                'app_config_id': self.app.config._id}
+        configured_hooks = {
+            hook.type: M.Webhook.query.find(
+                {'type': hook.type, 'app_config_id': self.app.config._id}
             ).all()
-        return {'webhooks': webhooks,
-                'configured_hooks': configured_hooks,
-                'admin_url': self.app.admin_url + 'webhooks'}
+            for hook in webhooks
+        }
+
+        return {
+            'webhooks': webhooks,
+            'configured_hooks': configured_hooks,
+            'admin_url': f'{self.app.admin_url}webhooks',
+        }
 
     @expose()
     def _lookup(self, name, *remainder):

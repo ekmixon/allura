@@ -90,8 +90,7 @@ class UserProfileApp(Application):
         return c.project.is_root
 
     def install(self, project):
-        pr = ProjectRole.by_user(c.user)
-        if pr:
+        if pr := ProjectRole.by_user(c.user):
             self.config.acl = [
                 ACE.allow(pr._id, perm)
                 for perm in self.permissions]
@@ -176,8 +175,9 @@ class UserProfileController(BaseController, FeedController):
         user = project.user_project_of
         return FeedArgs(
             {'author_link': user.url()},
-            'Recent posts by %s' % user.display_name,
-            project.url())
+            f'Recent posts by {user.display_name}',
+            project.url(),
+        )
 
     @expose('jinja:allura.ext.user_profile:templates/send_message.html')
     def send_message(self):
@@ -220,17 +220,14 @@ class UserProfileController(BaseController, FeedController):
         locationData = u.get_pref('localization')
         webpages = u.get_pref('webpages')
         location = ''
-        website = ''
         if locationData.city and locationData.country:
-            location = locationData.city + ', ' + locationData.country
-        elif locationData.country and not locationData.city:
+            location = f'{locationData.city}, {locationData.country}'
+        elif locationData.country:
             location = locationData.country
-        elif locationData.city and not locationData.country:
+        elif locationData.city:
             location = locationData.city
 
-        if len(webpages) > 0:
-            website = webpages[0]
-
+        website = webpages[0] if len(webpages) > 0 else ''
         return dict(
             user=u,
             location=location,
@@ -248,7 +245,7 @@ class UserProfileRestController(AppRestControllerMixin):
         json = {}
         for s in sections:
             if hasattr(s, '__json__'):
-                json.update(s.__json__())
+                json |= s.__json__()
         return json
 
 

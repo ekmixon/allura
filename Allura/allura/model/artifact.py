@@ -72,12 +72,12 @@ class Artifact(MappedClass, SearchIndexable):
             ('app_config_id', 'labels'),
         ]
 
-        def before_save(data):
+        def before_save(self):
             _session = artifact_orm_session._get()
             skip_mod_date = getattr(_session, 'skip_mod_date', False)
             skip_last_updated = getattr(_session, 'skip_last_updated', False)
             if not skip_mod_date:
-                data['mod_date'] = datetime.utcnow()
+                self['mod_date'] = datetime.utcnow()
             else:
                 log.debug('Not updating mod_date')
             if c.project and not skip_last_updated:
@@ -114,10 +114,13 @@ class Artifact(MappedClass, SearchIndexable):
             _id=str(self._id),
             mod_date=self.mod_date,
             labels=list(self.labels),
-            related_artifacts=[a.url() for a in self.related_artifacts(user=user or c.user)],
-            discussion_thread=self.discussion_thread.__json__(limit=posts_limit, is_export=is_export),
-            discussion_thread_url=h.absurl('/rest%s' %
-                                           self.discussion_thread.url()),
+            related_artifacts=[
+                a.url() for a in self.related_artifacts(user=user or c.user)
+            ],
+            discussion_thread=self.discussion_thread.__json__(
+                limit=posts_limit, is_export=is_export
+            ),
+            discussion_thread_url=h.absurl(f'/rest{self.discussion_thread.url()}'),
         )
 
     def parent_security_context(self):
@@ -183,9 +186,11 @@ class Artifact(MappedClass, SearchIndexable):
                 if user and not h.has_access(artifact, 'read', user):
                     continue
             except Exception:
-                log.debug('Error doing permission check on related artifacts of {}, '
-                          'probably because the "artifact" is a Commit not a real artifact'.format(self.index_id()),
-                          exc_info=True)
+                log.debug(
+                    f'Error doing permission check on related artifacts of {self.index_id()}, probably because the "artifact" is a Commit not a real artifact',
+                    exc_info=True,
+                )
+
 
             # TODO: This should be refactored. We shouldn't be checking
             # artifact type strings in platform code.
@@ -194,7 +199,9 @@ class Artifact(MappedClass, SearchIndexable):
                 app = ac.project.app_instance(ac) if ac else None
                 if app:
                     artifact.set_context(app.repo)
-            if artifact not in related_artifacts and (getattr(artifact, 'deleted', False) is False):
+            if artifact not in related_artifacts and not getattr(
+                artifact, 'deleted', False
+            ):
                 related_artifacts.append(artifact)
         return sorted(related_artifacts, key=lambda a: a.url())
 
@@ -243,12 +250,10 @@ class Artifact(MappedClass, SearchIndexable):
         user_proj_app_q = dict(user_id=user._id,
                                project_id=self.app_config.project_id,
                                app_config_id=self.app_config._id)
-        art_subscribed = Mailbox.subscribed(artifact=self, **user_proj_app_q)
-        if art_subscribed:
+        if art_subscribed := Mailbox.subscribed(artifact=self, **user_proj_app_q):
             return True
         if include_parents:
-            tool_subscribed = Mailbox.subscribed(**user_proj_app_q)
-            if tool_subscribed:
+            if tool_subscribed := Mailbox.subscribed(**user_proj_app_q):
                 return True
         return False
 
@@ -275,14 +280,10 @@ class Artifact(MappedClass, SearchIndexable):
 
         """
         if subject:
-            return 'mailto:%s?subject=[%s:%s:%s] Re: %s' % (
-                self.email_address,
-                self.app_config.project.shortname,
-                self.app_config.options.mount_point,
-                self.shorthand_id(),
-                subject)
+            return f'mailto:{self.email_address}?subject=[{self.app_config.project.shortname}:{self.app_config.options.mount_point}:{self.shorthand_id()}] Re: {subject}'
+
         else:
-            return 'mailto:%s' % self.email_address
+            return f'mailto:{self.email_address}'
 
     @property
     def email_domain(self):
@@ -324,7 +325,7 @@ class Artifact(MappedClass, SearchIndexable):
         return dict(
             id=self.index_id(),
             mod_date_dt=self.mod_date,
-            title='Artifact %s' % self._id,
+            title=f'Artifact {self._id}',
             project_id_s=str(project._id),
             project_name_t=project.name,
             project_shortname_t=project.shortname,
@@ -333,9 +334,10 @@ class Artifact(MappedClass, SearchIndexable):
             is_history_b=False,
             url_s=self.url(),
             type_s=self.type_s,
-            labels_t=' '.join(l for l in self.labels),
+            labels_t=' '.join(self.labels),
             snippet_s='',
-            deleted_b=self.deleted)
+            deleted_b=self.deleted,
+        )
 
     @property
     def type_name(self):
@@ -387,7 +389,9 @@ class Artifact(MappedClass, SearchIndexable):
                 app_config_id=self.app_config_id,
                 discussion_id=self.app_config.discussion_id,
                 ref_id=idx['id'],
-                subject='%s discussion' % h.get_first(idx, 'title'))
+                subject=f"{h.get_first(idx, 'title')} discussion",
+            )
+
         elif len(threads) == 1:
             t = threads[0]
         else:
@@ -408,8 +412,7 @@ class Artifact(MappedClass, SearchIndexable):
 
         parent_id = None
         if data:
-            in_reply_to = data.get('in_reply_to', [])
-            if in_reply_to:
+            if in_reply_to := data.get('in_reply_to', []):
                 parent_id = in_reply_to[0]
 
         return t, parent_id
@@ -438,10 +441,9 @@ class Artifact(MappedClass, SearchIndexable):
         :param **kw: passed through to Attachment class constructor
 
         """
-        att = self.attachment_class().save_attachment(
-            filename=filename,
-            fp=fp, artifact_id=self._id, **kw)
-        return att
+        return self.attachment_class().save_attachment(
+            filename=filename, fp=fp, artifact_id=self._id, **kw
+        )
 
     @LazyProperty
     def attachments(self):
@@ -475,13 +477,14 @@ class Artifact(MappedClass, SearchIndexable):
 
         def count_in_app():
             return cls.query.find(dict(app_config_id=app_config._id)).count()
+
         provider = plugin.ProjectRegistrationProvider.get()
         start = provider.registration_date(app_config.project)
 
         try:
             h.rate_limit(opt, count_in_app, start)
             if user and not user.is_anonymous() and count_by_user is not None:
-                h.rate_limit(opt + '_per_user', count_by_user, user.registration_date())
+                h.rate_limit(f'{opt}_per_user', count_by_user, user.registration_date())
         except forge_exc.RatelimitError:
             return True
         return False
@@ -514,8 +517,7 @@ class Snapshot(Artifact):
 
     def index(self):
         result = Artifact.index(self)
-        original = self.original()
-        if original:
+        if original := self.original():
             original_index = original.index()
             result.update(original_index)
             result['title'] = '%s (version %d)' % (h.get_first(original_index, 'title'), self.version)
@@ -534,7 +536,7 @@ class Snapshot(Artifact):
         raise NotImplementedError('original')  # pragma no cover
 
     def shorthand_id(self):
-        return '%s#%s' % (self.original().shorthand_id(), self.version)
+        return f'{self.original().shorthand_id()}#{self.version}'
 
     def clear_user_data(self):
         """ Redact author data for a given user """
@@ -554,9 +556,7 @@ class Snapshot(Artifact):
     @property
     def attachments(self):
         orig = self.original()
-        if not orig:
-            return None
-        return orig.attachments
+        return orig.attachments if orig else None
 
     def __getattr__(self, name):
         return getattr(self.data, name)
@@ -583,15 +583,16 @@ class VersionedArtifact(Artifact):
             ip_address = '0.0.0.0'
         data = dict(
             artifact_id=self._id,
-            artifact_class='%s.%s' % (
-                self.__class__.__module__,
-                self.__class__.__name__),
+            artifact_class=f'{self.__class__.__module__}.{self.__class__.__name__}',
             author=dict(
                 id=c.user._id,
                 username=c.user.username,
                 display_name=c.user.get_pref('display_name'),
-                logged_ip=ip_address),
-            data=state(self).clone())
+                logged_ip=ip_address,
+            ),
+            data=state(self).clone(),
+        )
+
         while True:
             self.version += 1
             data['version'] = self.version
@@ -622,10 +623,10 @@ class VersionedArtifact(Artifact):
             n = self.version + n + 1
         ss = self.__mongometa__.history_class.query.get(
             artifact_id=self._id,
-            artifact_class='%s.%s' % (
-                self.__class__.__module__,
-                self.__class__.__name__),
-            version=n)
+            artifact_class=f'{self.__class__.__module__}.{self.__class__.__name__}',
+            version=n,
+        )
+
         if ss is None:
             raise IndexError(n)
         return ss
@@ -639,17 +640,14 @@ class VersionedArtifact(Artifact):
 
     def history(self):
         HC = self.__mongometa__.history_class
-        q = HC.query.find(dict(artifact_id=self._id)).sort(
-            'version', pymongo.DESCENDING)
-        return q
+        return HC.query.find(dict(artifact_id=self._id)).sort(
+            'version', pymongo.DESCENDING
+        )
 
     @property
     def last_updated(self):
         history = self.history()
-        if history.count():
-            return self.history().first().timestamp
-        else:
-            return self.mod_date
+        return self.history().first().timestamp if history.count() else self.mod_date
 
     def delete(self):
         # remove history so that the snapshots aren't left orphaned
@@ -708,10 +706,9 @@ class Message(Artifact):
             timestamp = datetime.utcnow()
         dt = timestamp.strftime('%Y%m%d%H%M%S%f')
         slug = part
-        full_slug = dt + ':' + part
+        full_slug = f'{dt}:{part}'
         if parent:
-            return (parent.slug + '/' + slug,
-                    parent.full_slug + '/' + full_slug)
+            return f'{parent.slug}/{slug}', f'{parent.full_slug}/{full_slug}'
         else:
             return slug, full_slug
 
@@ -735,9 +732,13 @@ class Message(Artifact):
 
 class AwardFile(File):
 
+
+
+
     class __mongometa__:
         session = main_orm_session
-        name = str('award_file')
+        name = 'award_file'
+
     award_id = FieldProperty(S.ObjectId)
 
 
@@ -777,7 +778,7 @@ class Award(Artifact):
         return str(self._id)
 
     def longurl(self):
-        return self.created_by_neighborhood.url_prefix + "_admin/awards/" + self.url()
+        return f"{self.created_by_neighborhood.url_prefix}_admin/awards/{self.url()}"
 
     def shorthand_id(self):
         return self.short
@@ -826,14 +827,11 @@ class AwardGrant(Artifact):
 
     def longurl(self):
         slug = str(self.granted_to_project.shortname).replace('/', '_')
-        slug = self.award.longurl() + '/' + slug
+        slug = f'{self.award.longurl()}/{slug}'
         return h.urlquote(slug)
 
     def shorthand_id(self):
-        if self.award:
-            return self.award.short
-        else:
-            return None
+        return self.award.short if self.award else None
 
 
 class RssFeed(FG.Rss201rev2Feed):
@@ -899,11 +897,13 @@ class Feed(MappedClass):
         self.author_name = ""
         self.author_link = ""
         title_parts = self.title.partition(" modified by ")
-        self.title = "".join(title_parts[0:2]) + ("<REDACTED>" if title_parts[2] else '')
+        self.title = "".join(title_parts[:2]) + (
+            "<REDACTED>" if title_parts[2] else ''
+        )
 
     @classmethod
     def from_username(cls, username):
-        return cls.query.find({'author_link': "/u/{}/".format(username)}).all()
+        return cls.query.find({'author_link': f"/u/{username}/"}).all()
 
     @classmethod
     def has_access(cls, artifact):
@@ -911,11 +911,11 @@ class Feed(MappedClass):
         # return True
         from allura import model as M
         anon = M.User.anonymous()
-        if not security.has_access(artifact, 'read', user=anon):
-            return False
-        if not security.has_access(c.project, 'read', user=anon):
-            return False
-        return True
+        return (
+            bool(security.has_access(c.project, 'read', user=anon))
+            if security.has_access(artifact, 'read', user=anon)
+            else False
+        )
 
     @classmethod
     def post(cls, artifact, title=None, description=None, author=None,
@@ -933,8 +933,7 @@ class Feed(MappedClass):
         if author_name is None:
             author_name = author.get_pref('display_name')
         if title is None:
-            title = '%s modified by %s' % (
-                h.get_first(idx, 'title'), author_name)
+            title = f"{h.get_first(idx, 'title')} modified by {author_name}"
         if description is None:
             description = title
         if pubdate is None:
@@ -953,8 +952,7 @@ class Feed(MappedClass):
             pubdate=pubdate,
             author_name=author_name,
             author_link=author_link or author.url())
-        unique_id = kw.pop('unique_id', None)
-        if unique_id:
+        if unique_id := kw.pop('unique_id', None):
             item.unique_id = unique_id
         return item
 
@@ -973,7 +971,7 @@ class Feed(MappedClass):
         query = defaultdict(dict)
         if callable(q):
             q = q(since, until, page, limit)
-        query.update(q)
+        query |= q
         if since is not None:
             query['pubdate']['$gte'] = since
         if until is not None:
@@ -1051,16 +1049,12 @@ class VotableArtifact(MappedClass):
         """
         if user.username in self.votes_up_users:
             return 1
-        if user.username in self.votes_down_users:
-            return -1
-        return 0
+        return -1 if user.username in self.votes_down_users else 0
 
     @property
     def votes_up_percent(self):
         votes_count = self.votes_up + self.votes_down
-        if votes_count == 0:
-            return 0
-        return int(float(self.votes_up) / votes_count * 100)
+        return 0 if votes_count == 0 else int(float(self.votes_up) / votes_count * 100)
 
     def __json__(self):
         return {
@@ -1112,9 +1106,7 @@ class ReactableArtifact(MappedClass):
         return 
     
     def update_react_count(self, r, add=True):
-        i = 1
-        if not add:
-            i = -1
+        i = 1 if add else -1
         if r in self.react_counts:
             self.react_counts[r] += i
             if self.react_counts[r] == 0:
@@ -1125,9 +1117,13 @@ class ReactableArtifact(MappedClass):
 
 class MovedArtifact(Artifact):
 
+
+
+
     class __mongometa__:
         session = artifact_orm_session
-        name = str('moved_artifact')
+        name = 'moved_artifact'
+
 
     _id = FieldProperty(S.ObjectId)
     app_config_id = ForeignIdProperty(
@@ -1136,14 +1132,21 @@ class MovedArtifact(Artifact):
     moved_to_url = FieldProperty(str, required=True, allow_none=False)
 
 
+
+
+
 class SpamCheckResult(MappedClass):
+
+
+
     class __mongometa__:
         session = main_orm_session
-        name = str('spam_check_result')
+        name = 'spam_check_result'
         indexes = [
             ('project_id', 'result'),
             ('user_id', 'result'),
         ]
+
 
     _id = FieldProperty(S.ObjectId)
     ref_id = ForeignIdProperty('ArtifactReference')

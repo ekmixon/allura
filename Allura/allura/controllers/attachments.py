@@ -52,7 +52,7 @@ class AttachmentsController(BaseController):
     def _lookup(self, filename=None, *args):
         if filename:
             if not args:
-                filename = request.path.rsplit(str('/'), 1)[-1]
+                filename = request.path.rsplit('/', 1)[-1]
             filename = unquote(filename)
             return self.AttachmentControllerClass(filename, self.artifact), args
         else:
@@ -122,9 +122,11 @@ class AttachmentController(BaseController):
             redirect(six.ensure_text(request.referer or '/'))
         if self.artifact.deleted:
             raise exc.HTTPNotFound
-        embed = False
-        if self.attachment.content_type and self.attachment.content_type in SAFE_CONTENT_TYPES:
-            embed = True
+        embed = bool(
+            self.attachment.content_type
+            and self.attachment.content_type in SAFE_CONTENT_TYPES
+        )
+
         return self.attachment.serve(embed=embed)
 
     @expose()

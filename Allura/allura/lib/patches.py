@@ -79,7 +79,7 @@ def apply():
         if (request.method == 'GET' and request.path.endswith('/') and not response_type):
             location = request.path_url[:-1]
             if request.query_string:
-                location += '?' + request.query_string
+                location += f'?{request.query_string}'
             raise webob.exc.HTTPMovedPermanently(location=location)
         return func(*args, **kwargs)
 
@@ -90,9 +90,9 @@ def apply():
         __traceback_hide__ = 'before_and_this'  # for paste/werkzeug shorter traces
         response_type = getattr(request, 'response_type', None)
         if (request.method == 'GET' and not request.path.endswith('/') and not response_type):
-            location = request.path_url + '/'
+            location = f'{request.path_url}/'
             if request.query_string:
-                location += '?' + request.query_string
+                location += f'?{request.query_string}'
             raise webob.exc.HTTPMovedPermanently(location=location)
         return func(*args, **kwargs)
 

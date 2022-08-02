@@ -79,7 +79,7 @@ class Discussion(Artifact, ActivityObject):
 
     @property
     def activity_name(self):
-        return 'discussion %s' % self.name
+        return f'discussion {self.name}'
 
     @classmethod
     def thread_class(cls):
@@ -109,7 +109,7 @@ class Discussion(Artifact, ActivityObject):
         return q.first()
 
     def url(self):
-        return self.app.url + '_discuss/'
+        return f'{self.app.url}_discuss/'
 
     def shorthand_id(self):
         return self.shortname
@@ -211,7 +211,7 @@ class Thread(Artifact, ActivityObject):
 
     @property
     def activity_name(self):
-        return 'thread %s' % self.subject
+        return f'thread {self.subject}'
 
     def parent_security_context(self):
         return self.discussion
@@ -248,9 +248,7 @@ class Thread(Artifact, ActivityObject):
     def artifact(self):
         # Threads attached to a wiki page, ticket, etc will have a .ref.artifact pointing to that WikiPage etc
         # Threads that are part of a forum will not have that
-        if self.ref is None:
-            return self.discussion
-        return self.ref.artifact
+        return self.discussion if self.ref is None else self.ref.artifact
 
     # Use wisely - there's .num_replies also
     @property
@@ -263,9 +261,7 @@ class Thread(Artifact, ActivityObject):
         )).count()
 
     def primary(self):
-        if self.ref is None:
-            return self
-        return self.ref.artifact
+        return self if self.ref is None else self.ref.artifact
 
     def post_to_feed(self, post):
         if post.status == 'ok':
@@ -299,11 +295,7 @@ class Thread(Artifact, ActivityObject):
         if self.include_subject_in_spam_check(post):
             spam_check_text = self.subject + '\n' + spam_check_text
         spammy = g.spam_checker.check(spam_check_text, artifact=post, user=c.user)
-        if c.user in c.project.users_with_role(*roles):
-            # always run the check, so it's logged.  But don't act on it for admins/developers of their own project
-            return False
-        else:
-            return spammy
+        return False if c.user in c.project.users_with_role(*roles) else spammy
 
     def post(self, text, message_id=None, parent_id=None, notify=True,
              notification_text=None, timestamp=None, ignore_security=False,
@@ -331,17 +323,14 @@ class Thread(Artifact, ActivityObject):
             kwargs['_id'] = message_id
         post = self.post_class()(**kwargs)
 
-        if ignore_security or is_meta:
-            spammy = False
-        else:
-            spammy = self.is_spam(post)
+        spammy = False if ignore_security or is_meta else self.is_spam(post)
         # unmoderated post -> autoapprove
         # unmoderated post but is spammy -> don't approve it, it goes into moderation
         # moderated post -> moderation
         # moderated post but is spammy -> mark as spam
         if ignore_security or (not spammy and has_access(self, 'unmoderated_post')):
             log.info('Auto-approving message from %s', c.user.username)
-            file_info = kw.get('file_info', None)
+            file_info = kw.get('file_info')
             post.approve(file_info, notify=notify,
                          notification_text=notification_text)
         elif not has_access(self, 'unmoderated_post') and spammy:
@@ -353,13 +342,16 @@ class Thread(Artifact, ActivityObject):
     def notify_moderators(self, post):
         ''' Notify moderators that a post needs approval [#2963] '''
         artifact = self.artifact or self
-        subject = '[%s:%s] Moderation action required' % (
-            c.project.shortname, c.app.config.options.mount_point)
+        subject = f'[{c.project.shortname}:{c.app.config.options.mount_point}] Moderation action required'
+
         author = post.author()
         url = self.discussion_class().query.get(_id=self.discussion_id).url()
-        text = ('The following submission requires approval at %s before '
-                'it can be approved for posting:\n\n%s'
-                % (h.absurl(url + 'moderate'), post.text))
+        text = (
+            'The following submission requires approval at %s before '
+            'it can be approved for posting:\n\n%s'
+            % (h.absurl(f'{url}moderate'), post.text)
+        )
+
         n = Notification(
             ref_id=artifact.index_id(),
             topic='message',
@@ -416,10 +408,7 @@ class Thread(Artifact, ActivityObject):
             terms['status'] = status
         terms['deleted'] = False
         q = self.post_class().query.find(terms)
-        if style == 'threaded':
-            q = q.sort('full_slug')
-        else:
-            q = q.sort('timestamp')
+        q = q.sort('full_slug') if style == 'threaded' else q.sort('timestamp')
         if limit is not None:
             limit = int(limit)
             if page is not None:
@@ -435,7 +424,7 @@ class Thread(Artifact, ActivityObject):
     def url(self):
         # Can't use self.discussion because it might change during the req
         discussion = self.discussion_class().query.get(_id=self.discussion_id)
-        return discussion.url() + 'thread/' + str(self._id) + '/'
+        return f'{discussion.url()}thread/{str(self._id)}/'
 
     def shorthand_id(self):
         return self._id
@@ -476,9 +465,8 @@ class PostHistory(Snapshot):
         return self.post_class().query.get(_id=self.artifact_id)
 
     def shorthand_id(self):
-        original = self.original()
-        if original:
-            return '%s#%s' % (original.shorthand_id(), self.version)
+        if original := self.original():
+            return f'{original.shorthand_id()}#{self.version}'
         else:
             return None
 
@@ -578,18 +566,19 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
             g.markdown.cached_convert(self, 'text')).striptags()
         if len(summary) > LEN:
             split = max(summary.find(' ', LEN), LEN)
-            summary = summary[:split] + '...'
+            summary = f'{summary[:split]}...'
         d.update(summary=summary)
         return d
 
     def index(self):
         result = super(Post, self).index()
         result.update(
-            title='Post by %s on %s' % (
-                self.author().username, self.subject),
+            title=f'Post by {self.author().username} on {self.subject}',
             name_s=self.subject,
             type_s='Post',
-            text=self.text)
+            text=self.text,
+        )
+
         return result
 
     @classmethod
@@ -615,8 +604,7 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
         if self.thread:
             subject = self.thread.subject
             if not subject:
-                artifact = self.thread.artifact
-                if artifact:
+                if artifact := self.thread.artifact:
                     subject = getattr(artifact, 'email_subject', '')
         return subject or '(no subject)'
 
@@ -651,28 +639,21 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
         return self.thread.primary()
 
     def url(self):
-        if self.thread:
-            return self.thread.url() + h.urlquote(self.slug) + '/'
-        else:  # pragma no cover
-            return None
+        return self.thread.url() + h.urlquote(self.slug) + '/' if self.thread else None
 
     def parent_artifact(self):
         """
         :return: the artifact (e.g Ticket, Wiki Page) that this Post belongs to.  May return None.
         """
         aref = ArtifactReference.query.get(_id=self.thread.ref_id)
-        if aref and aref.artifact:
-            return aref.artifact
-        else:
-            return None
+        return aref.artifact if aref and aref.artifact else None
 
     def main_url(self):
         """
         :return: the URL for the artifact (e.g Ticket, Wiki Page) that this Post belongs to,
                  else the default thread URL
         """
-        parent_artifact = self.parent_artifact()
-        if parent_artifact:
+        if parent_artifact := self.parent_artifact():
             url = parent_artifact.url()
         else:
             url = self.thread.url()
@@ -712,14 +693,11 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
         slug = h.urlquote(self.slug)
         url = self.main_url()
         if page == 0:
-            return '%s?limit=%s#%s' % (url, limit, slug)
-        return '%s?limit=%s&page=%s#%s' % (url, limit, page, slug)
+            return f'{url}?limit={limit}#{slug}'
+        return f'{url}?limit={limit}&page={page}#{slug}'
 
     def shorthand_id(self):
-        if self.thread:
-            return '%s#%s' % (self.thread.shorthand_id(), self.slug)
-        else:  # pragma no cover
-            return None
+        return f'{self.thread.shorthand_id()}#{self.slug}' if self.thread else None
 
     def link_text(self):
         return self.subject
@@ -780,7 +758,7 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
             # this means artifact was not auto approved, and all the
             # subscribers did not receive notification. Now, moderator approved
             # artifact/post, so we should re-send actual notification
-            msg_id = 'approved-' + msg_id
+            msg_id = f'approved-{msg_id}'
             n = Notification.query.get(_id=msg_id)
             if n:
                 # 'approved' notification also exists, re-send
@@ -795,12 +773,12 @@ class Post(Message, VersionedArtifact, ActivityObject, ReactableArtifact):
                                   **notification_params)
         if not n:
             return
-        if getattr(artifact, 'monitoring_email', None):
-            if hasattr(artifact, 'notify_post'):
-                if artifact.notify_post:
-                    n.send_simple(artifact.monitoring_email)
-            else:  # Send if no extra checks required
-                n.send_simple(artifact.monitoring_email)
+        if getattr(artifact, 'monitoring_email', None) and (
+            hasattr(artifact, 'notify_post')
+            and artifact.notify_post
+            or not hasattr(artifact, 'notify_post')
+        ):
+            n.send_simple(artifact.monitoring_email)
 
     def spam(self, submit_spam_feedback=True):
         self.status = 'spam'
@@ -855,11 +833,8 @@ class DiscussionAttachment(BaseAttachment):
 
     def url(self):
         if self.post_id:
-            return (self.post.url() + 'attachment/' +
-                    h.urlquote(self.filename))
+            return (f'{self.post.url()}attachment/' + h.urlquote(self.filename))
         elif self.thread_id:
-            return (self.thread.url() + 'attachment/' +
-                    h.urlquote(self.filename))
+            return (f'{self.thread.url()}attachment/' + h.urlquote(self.filename))
         else:
-            return (self.discussion.url() + 'attachment/' +
-                    h.urlquote(self.filename))
+            return (f'{self.discussion.url()}attachment/' + h.urlquote(self.filename))

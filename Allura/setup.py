@@ -49,28 +49,29 @@ setup(
         'Topic :: Internet :: WWW/HTTP :: WSGI :: Application',
         'License :: OSI Approved :: Apache Software License',
     ],
-    install_requires=[
-    ],
+    install_requires=[],
     paster_plugins=['PasteScript', 'TurboGears2', 'Ming'],
     packages=find_packages(exclude=['ez_setup']),
     include_package_data=True,
     test_suite='nose.collector',
     tests_require=['WebTest >= 1.2', 'BeautifulSoup', 'nose'],
-    package_data={str('allura'): ['i18n/*/LC_MESSAGES/*.mo',
-                             'templates/**.html',
-                             'templates/**.py',
-                             'templates/**.xml',
-                             'templates/**.txt',
-                             'public/*/*/*/*/*',
-                             ]},
-    message_extractors={'allura': [
-        ('**.py', 'python', None),
-        ('templates/**.html', 'jinja2', None),
-        ('public/**', 'ignore', None)]},
-
-    # These entry points define what tools and plugins are available for Allura.
-    # Other packages (the Forge* directories) or 3rd-party can add more too.
-    # development.ini is used for many cases to specify which to actually use.
+    package_data={
+        'allura': [
+            'i18n/*/LC_MESSAGES/*.mo',
+            'templates/**.html',
+            'templates/**.py',
+            'templates/**.xml',
+            'templates/**.txt',
+            'public/*/*/*/*/*',
+        ]
+    },
+    message_extractors={
+        'allura': [
+            ('**.py', 'python', None),
+            ('templates/**.html', 'jinja2', None),
+            ('public/**', 'ignore', None),
+        ]
+    },
     entry_points="""
     [paste.app_factory]
     main = allura.config.middleware:make_app

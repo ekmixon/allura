@@ -54,18 +54,16 @@ def main():
         run('ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/ldap/schema/inetorgperson.ldif')
     if get_value('add backend ldif', 'y') == 'y':
         with tempfile(backend_ldif, locals()) as name:
-            run('ldapadd -Y EXTERNAL -H ldapi:/// -f %s' % name)
+            run(f'ldapadd -Y EXTERNAL -H ldapi:/// -f {name}')
     with open('/etc/ldap.secret', 'w') as fp:
         fp.write(secret)
     os.chmod('/etc/ldap.secret', 0o400)
     if get_value('add frontend ldif', 'y') == 'y':
         with tempfile(frontend_ldif, locals()) as name:
-            run('ldapadd -c -x -D cn=admin,%s -W -f %s -y /etc/ldap.secret' %
-                (suffix, name))
+            run(f'ldapadd -c -x -D cn=admin,{suffix} -W -f {name} -y /etc/ldap.secret')
     if get_value('add initial user/group', 'y') == 'y':
         with tempfile(initial_user_ldif, locals()) as name:
-            run('ldapadd -c -x -D cn=admin,%s -W -f %s -y /etc/ldap.secret' %
-                (suffix, name))
+            run(f'ldapadd -c -x -D cn=admin,{suffix} -W -f {name} -y /etc/ldap.secret')
     if get_value('setup ldap auth', 'y') == 'y':
         run('apt-get install libnss-ldap')
         run('dpkg-reconfigure ldap-auth-config')
@@ -89,7 +87,7 @@ def get_value(key, default):
         default = config.get('scm', key)
     except NoOptionError:
         pass
-    value = input('%s? [%s]' % (key, default))
+    value = input(f'{key}? [{default}]')
     if not value:
         value = default
     config.set('scm', key, value)

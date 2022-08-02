@@ -49,7 +49,7 @@ class StopForumSpamSpamFilter(SpamFilter):
     def __init__(self, config):
         self.packed_ips = set()
         threshold = int(config.get('spam.stopforumspam.threshold', 20))
-        threshold_strs = set(str(i) for i in range(threshold+1))  # make strs, so that in the loop no int cast needed
+        threshold_strs = {str(i) for i in range(threshold+1)}
         with open(config['spam.stopforumspam.ip_addr_file']) as f:
             csv_file = csv.reader(f)
             for record in csv_file:
@@ -63,8 +63,7 @@ class StopForumSpamSpamFilter(SpamFilter):
                  len(self.packed_ips) * getsizeof(next(iter(self.packed_ips))) * 2)
 
     def check(self, text, artifact=None, user=None, content_type='comment', **kw):
-        ip = utils.ip_address(request)
-        if ip:
+        if ip := utils.ip_address(request):
             ip_int = int(ipaddress.ip_address(six.text_type(ip)))
             res = ip_int in self.packed_ips
             self.record_result(res, artifact, user)

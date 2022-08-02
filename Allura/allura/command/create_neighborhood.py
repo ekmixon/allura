@@ -43,14 +43,18 @@ class CreateNeighborhoodCommand(base.Command):
         shortname = self.args[1]
         n = M.Neighborhood(
             name=shortname,
-            url_prefix='/' + shortname + '/',
-            features=dict(private_projects=False,
-                          max_projects=None,
-                          css='none',
-                          google_analytics=False))
+            url_prefix=f'/{shortname}/',
+            features=dict(
+                private_projects=False,
+                max_projects=None,
+                css='none',
+                google_analytics=False,
+            ),
+        )
+
         project_reg = plugin.ProjectRegistrationProvider.get()
         project_reg.register_neighborhood_project(n, admins)
-        log.info('Successfully created neighborhood "{}"'.format(shortname))
+        log.info(f'Successfully created neighborhood "{shortname}"')
 
 
 class UpdateNeighborhoodCommand(base.Command):
@@ -75,17 +79,13 @@ class UpdateNeighborhoodCommand(base.Command):
             raise exceptions.NoSuchNeighborhoodError("The neighborhood %s "
                                                      "could not be found in the database" % shortname)
         tool_value = self.args[2].lower()
-        if tool_value[:1] == "t":
-            home_tool_active = True
-        else:
-            home_tool_active = False
-
+        home_tool_active = tool_value[:1] == "t"
         if home_tool_active == nb.has_home_tool:
             return
 
         p = nb.neighborhood_project
+        zero_position_exists = False
         if home_tool_active:
-            zero_position_exists = False
             for ac in p.app_configs:
                 if ac.options['ordinal'] == 0:
                     zero_position_exists = True
@@ -97,7 +97,6 @@ class UpdateNeighborhoodCommand(base.Command):
             p.install_app('home', 'home', 'Home', ordinal=0)
         else:
             app_config = p.app_config('home')
-            zero_position_exists = False
             if app_config.options['ordinal'] == 0:
                 zero_position_exists = True
 

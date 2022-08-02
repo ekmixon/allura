@@ -44,28 +44,32 @@ log = logging.getLogger(__name__)
 
 # Collection definitions
 ArtifactReferenceDoc = collection(
-    str('artifact_reference'), main_doc_session,
+    'artifact_reference',
+    main_doc_session,
     Field('_id', str),
-    Field('artifact_reference', dict(
-        cls=S.Binary(),
-        project_id=S.ObjectId(),
-        app_config_id=S.ObjectId(),
-        artifact_id=S.Anything(if_missing=None))),
+    Field(
+        'artifact_reference',
+        dict(
+            cls=S.Binary(),
+            project_id=S.ObjectId(),
+            app_config_id=S.ObjectId(),
+            artifact_id=S.Anything(if_missing=None),
+        ),
+    ),
     Field('references', [str], index=True),
-    Index('artifact_reference.project_id'),  # used in ReindexCommand
+    Index('artifact_reference.project_id'),
 )
 
+
 ShortlinkDoc = collection(
-    str('shortlink'), main_doc_session,
+    'shortlink',
+    main_doc_session,
     Field('_id', S.ObjectId()),
-    # index needed for from_artifact() and index_tasks.py:del_artifacts
     Field('ref_id', str, index=True),
     Field('project_id', S.ObjectId()),
     Field('app_config_id', S.ObjectId()),
     Field('link', str),
     Field('url', str),
-    # used by from_links()  More helpful to have project_id first, for other
-    # queries
     Index('project_id', 'link'),
 )
 
@@ -121,11 +125,7 @@ class Shortlink(object):
     re_link_2 = re.compile(r'^' + _core_re, re.VERBOSE)
 
     def __repr__(self):
-        return '<Shortlink %s %s %s -> %s>' % (
-            self.project_id,
-            self.app_config_id,
-            self.link,
-            self.ref_id)
+        return f'<Shortlink {self.project_id} {self.app_config_id} {self.link} -> {self.ref_id}>'
 
     @classmethod
     def lookup(cls, link):
@@ -154,46 +154,46 @@ class Shortlink(object):
     @classmethod
     def from_links(cls, *links):
         '''Convert a sequence of shortlinks to the matching Shortlink objects'''
-        if len(links):
-            result = {}
+        if not len(links):
+            return {}
+        result = {}
             # Parse all the links
-            parsed_links = dict((link, cls._parse_link(link))
-                                for link in links)
-            links_by_artifact = defaultdict(list)
-            project_ids = set()
-            for link, d in list(parsed_links.items()):
-                if d:
-                    project_ids.add(d['project_id'])
-                    links_by_artifact[unquote(d['artifact'])].append(d)
-                else:
-                    result[link] = parsed_links.pop(link)
-            q = cls.query.find(
-                dict(
-                    link={'$in': list(links_by_artifact.keys())},
-                    project_id={'$in': list(project_ids)}
-                ),
-                validate=False,
-                sort=[('_id', pymongo.DESCENDING)],  # if happen to be multiple (ticket move?) have newest first
-            )
-            matches_by_artifact = dict(
-                (link, list(matches))
-                for link, matches in groupby(q, key=lambda s: unquote(s.link)))
-            for link, d in six.iteritems(parsed_links):
-                matches = matches_by_artifact.get(unquote(d['artifact']), [])
+        parsed_links = {link: cls._parse_link(link) for link in links}
+        links_by_artifact = defaultdict(list)
+        project_ids = set()
+        for link, d in list(parsed_links.items()):
+            if d:
+                project_ids.add(d['project_id'])
+                links_by_artifact[unquote(d['artifact'])].append(d)
+            else:
+                result[link] = parsed_links.pop(link)
+        q = cls.query.find(
+            dict(
+                link={'$in': list(links_by_artifact.keys())},
+                project_id={'$in': list(project_ids)}
+            ),
+            validate=False,
+            sort=[('_id', pymongo.DESCENDING)],  # if happen to be multiple (ticket move?) have newest first
+        )
+        matches_by_artifact = {
+            link: list(matches)
+            for link, matches in groupby(q, key=lambda s: unquote(s.link))
+        }
+
+        for link, d in six.iteritems(parsed_links):
+            matches = matches_by_artifact.get(unquote(d['artifact']), [])
+            matches = (
+                m for m in matches
+                if m.project.shortname == d['project'] and
+                m.project.neighborhood_id == d['nbhd'] and
+                m.app_config is not None and
+                m.project.app_instance(m.app_config.options.mount_point))
+            if d['app']:
                 matches = (
                     m for m in matches
-                    if m.project.shortname == d['project'] and
-                    m.project.neighborhood_id == d['nbhd'] and
-                    m.app_config is not None and
-                    m.project.app_instance(m.app_config.options.mount_point))
-                if d['app']:
-                    matches = (
-                        m for m in matches
-                        if m.app_config.options.mount_point == d['app'])
-                result[link] = cls._get_correct_match(link, list(matches))
-            return result
-        else:
-            return {}
+                    if m.app_config.options.mount_point == d['app'])
+            result[link] = cls._get_correct_match(link, list(matches))
+        return result
 
     @classmethod
     def _get_correct_match(cls, link, matches):
@@ -209,7 +209,7 @@ class Shortlink(object):
             if not result:
                 cls.log_ambiguous_link('Can not remove ambiguity for link %s with c.app %s', matches, link, c.app)
                 result = matches[0]
-        elif len(matches) > 1 and not getattr(c, 'app', None):
+        elif len(matches) > 1:
             cls.log_ambiguous_link('Ambiguous link to %s and c.app is not present to remove ambiguity', matches, link)
             result = matches[0]
         return result
@@ -237,8 +237,7 @@ class Shortlink(object):
             p_id = getattr(c.project, '_id', None)
             p_nbhd = c.project.neighborhood_id
         if len(parts) == 3:
-            p = Project.query.get(shortname=parts[0], neighborhood_id=p_nbhd)
-            if p:
+            if p := Project.query.get(shortname=parts[0], neighborhood_id=p_nbhd):
                 p_id = p._id
             return dict(
                 nbhd=p_nbhd,

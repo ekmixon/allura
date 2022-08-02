@@ -80,11 +80,11 @@ class User():
     def deserialize(self, node, cstruct):
         if cstruct is col.null:
             return col.null
-        user = M.User.by_username(cstruct)
-        if not user:
+        if user := M.User.by_username(cstruct):
+            return user
+        else:
             raise col.Invalid(node,
                               'Invalid username "%s".' % cstruct)
-        return user
 
 
 class ProjectShortnameType():
@@ -188,9 +188,7 @@ class NewProjectSchema(col.MappingSchema):
 
 
 def trove_ids(orig, new_):
-    if new_ is None:
-        return orig
-    return list(set(t._id for t in list(new_)))
+    return orig if new_ is None else list({t._id for t in list(new_)})
 
 
 def make_newproject_schema(nbhd, update=False):
@@ -235,7 +233,7 @@ def make_shortname(name, max_len):
     shortname = slugify(name)[1].replace('_', '-')
     # must start with a letter
     if not shortname[0].isalpha():
-        shortname = 'a-' + shortname
+        shortname = f'a-{shortname}'
     # truncate length, avoid trailing dash
     shortname = shortname[:max_len].rstrip('-')
     # too short
@@ -271,7 +269,7 @@ def create_project_with_attrs(p, nbhd, update=False, ensure_tools=False):
     project.notifications_disabled = True
 
     if ensure_tools and 'tools' in project_template:
-        for i, tool in enumerate(six.iterkeys(project_template['tools'])):
+        for tool in six.iterkeys(project_template['tools']):
             tool_config = project_template['tools'][tool]
             if project.app_instance(tool_config['mount_point']):
                 continue

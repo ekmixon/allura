@@ -53,32 +53,29 @@ class TaskdCleanupCommand(base.Command):
         self.suspicious_tasks = []
 
         taskd_pids = self._taskd_pids()
-        base.log.info('Taskd processes on %s: %s' %
-                      (self.hostname, taskd_pids))
+        base.log.info(f'Taskd processes on {self.hostname}: {taskd_pids}')
 
         # find stuck taskd processes
         base.log.info('Seeking for stuck taskd processes')
         for pid in taskd_pids:
-            base.log.info('...sending USR1 to %s and watching status log' %
-                          (pid))
+            base.log.info(f'...sending USR1 to {pid} and watching status log')
             status = self._check_taskd_status(int(pid))
             if status != 'OK':
-                base.log.info('...taskd pid %s has stuck' % pid)
+                base.log.info(f'...taskd pid {pid} has stuck')
                 self.stuck_pids.append(pid)
                 if self.options.kill:
-                    base.log.info('...-k is set. Killing %s' % pid)
+                    base.log.info(f'...-k is set. Killing {pid}')
                     self._kill_stuck_taskd(pid)
             else:
-                base.log.info('...%s' % status)
+                base.log.info(f'...{status}')
 
         # find 'forsaken' tasks
         base.log.info('Seeking for forsaken busy tasks')
         tasks = [t for t in self._busy_tasks()
                  if t not in self.error_tasks]  # skip seen tasks
-        base.log.info('Found %s busy tasks on %s' %
-                      (len(tasks), self.hostname))
+        base.log.info(f'Found {len(tasks)} busy tasks on {self.hostname}')
         for task in tasks:
-            base.log.info('Verifying task %s' % task)
+            base.log.info(f'Verifying task {task}')
             pid = task.process.split()[-1]
             if pid not in taskd_pids:
                 # 'forsaken' task
@@ -92,8 +89,9 @@ class TaskdCleanupCommand(base.Command):
                 # check if taskd with given pid really processing this task
                 # now:
                 base.log.info(
-                    'Checking that taskd pid %s is really processing task %s' %
-                    (pid, task._id))
+                    f'Checking that taskd pid {pid} is really processing task {task._id}'
+                )
+
                 status = self._check_task(pid, task)
                 if status != 'OK':
                     # maybe task moved quickly and now is complete
@@ -113,7 +111,7 @@ class TaskdCleanupCommand(base.Command):
     def print_summary(self):
         base.log.info('-' * 80)
         if self.stuck_pids:
-            base.log.info('Found stuck taskd: %s' % self.stuck_pids)
+            base.log.info(f'Found stuck taskd: {self.stuck_pids}')
             if self.options.kill:
                 base.log.info('...stuck taskd processes were killed')
             else:
@@ -123,9 +121,9 @@ class TaskdCleanupCommand(base.Command):
             base.log.info('Tasks marked as \'error\': %s' % self.error_tasks)
 
     def _busy_tasks(self, pid=None):
-        regex = '^%s ' % self.hostname
+        regex = f'^{self.hostname} '
         if pid is not None:
-            regex = '^%s pid %s' % (self.hostname, pid)
+            regex = f'^{self.hostname} pid {pid}'
         return M.MonQTask.query.find({
             'state': 'busy',
             'process': {'$regex': regex}
@@ -137,10 +135,11 @@ class TaskdCleanupCommand(base.Command):
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         stdout, stderr = p.communicate()
-        tasks = []
-        if p.returncode == 0:
-            tasks = [pid for pid in six.ensure_text(stdout).split('\n') if pid != '']
-        return tasks
+        return (
+            [pid for pid in six.ensure_text(stdout).split('\n') if pid != '']
+            if p.returncode == 0
+            else []
+        )
 
     def _taskd_status(self, pid, retry=False):
         if not retry:
@@ -157,9 +156,9 @@ class TaskdCleanupCommand(base.Command):
 
     def _check_taskd_status(self, pid):
         for i in range(self.options.num_retry):
-            retry = False if i == 0 else True
+            retry = i != 0
             status = self._taskd_status(pid, retry)
-            if ('taskd pid %s' % pid) in status:
+            if f'taskd pid {pid}' in status:
                 return 'OK'
             base.log.info('retrying after one second')
             time.sleep(1)
@@ -167,10 +166,9 @@ class TaskdCleanupCommand(base.Command):
 
     def _check_task(self, taskd_pid, task):
         for i in range(self.options.num_retry):
-            retry = False if i == 0 else True
+            retry = i != 0
             status = self._taskd_status(taskd_pid, retry)
-            line = 'taskd pid %s is currently handling task %s' % (
-                taskd_pid, task)
+            line = f'taskd pid {taskd_pid} is currently handling task {task}'
             if line in status:
                 return 'OK'
             base.log.info('retrying after one second')
@@ -200,7 +198,7 @@ class TaskdCleanupCommand(base.Command):
             return
         complete_tasks = self._complete_suspicious_tasks()
         for task in self.suspicious_tasks:
-            base.log.info('Verifying task %s' % task)
+            base.log.info(f'Verifying task {task}')
             if task._id not in complete_tasks:
                 base.log.info('...incomplete. Setting status to \'error\'')
                 task.state = 'error'

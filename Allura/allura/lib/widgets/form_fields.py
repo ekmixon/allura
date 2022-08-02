@@ -122,8 +122,7 @@ class ProjectUserSelect(ew.InputField):
         return value
 
     def resources(self):
-        for r in super(ProjectUserSelect, self).resources():
-            yield r
+        yield from super(ProjectUserSelect, self).resources()
         yield ew.JSLink('allura/js/jquery-ui.min.js', location='body_top_js')
         yield ew.CSSLink('css/autocomplete.css')  # customized in [6b78ed] so we can't just use jquery-ui.min.css
         yield onready('''
@@ -157,8 +156,7 @@ class ProjectUserCombo(ew.SingleSelectField):
         return value
 
     def resources(self):
-        for r in super(ProjectUserCombo, self).resources():
-            yield r
+        yield from super(ProjectUserCombo, self).resources()
         yield ew.JSLink('allura/js/jquery-ui.min.js', location='body_top_js')
         yield ew.CSSLink('css/autocomplete.css')  # customized in [6b78ed] so we can't just use jquery-ui.min.css
         yield ew.CSSLink('css/combobox.css')
@@ -188,8 +186,7 @@ class NeighborhoodProjectSelect(ew.InputField):
         return value
 
     def resources(self):
-        for r in super(NeighborhoodProjectSelect, self).resources():
-            yield r
+        yield from super(NeighborhoodProjectSelect, self).resources()
         yield ew.JSLink('allura/js/jquery-ui.min.js', location='body_top_js')
         yield ew.CSSLink('css/autocomplete.css')  # customized in [6b78ed] so we can't just use jquery-ui.min.css
         yield onready('''
@@ -226,8 +223,7 @@ class AttachmentAdd(ew_core.Widget):
         name=None)
 
     def resources(self):
-        for r in super(AttachmentAdd, self).resources():
-            yield r
+        yield from super(AttachmentAdd, self).resources()
         yield onready('''
             $(".attachment_form_add_button").click(function (evt) {
                 $(this).hide();
@@ -282,8 +278,7 @@ class MarkdownEdit(ew.TextArea):
         return value
 
     def resources(self):
-        for r in super(MarkdownEdit, self).resources():
-            yield r
+        yield from super(MarkdownEdit, self).resources()
         yield ew.JSLink('js/jquery.lightbox_me.js')
         yield ew.CSSLink('css/easymde.min.css', compress=False)
         yield ew.CSSLink('css/markitup_sf.css')
@@ -334,11 +329,11 @@ class PageList(ew_core.Widget):
 
     @property
     def url_params(self, **kw):
-        url_params = dict()
-        for k, val in six.iteritems(request.params):
-            if k not in ['limit', 'count', 'page']:
-                url_params[k] = val
-        return url_params
+        return {
+            k: val
+            for k, val in six.iteritems(request.params)
+            if k not in ['limit', 'count', 'page']
+        }
 
 
 class PageSize(ew_core.Widget):
@@ -352,11 +347,11 @@ class PageSize(ew_core.Widget):
 
     @property
     def url_params(self, **kw):
-        url_params = dict()
-        for k, val in six.iteritems(request.params):
-            if k not in ['limit', 'count', 'page']:
-                url_params[k] = val
-        return url_params
+        return {
+            k: val
+            for k, val in six.iteritems(request.params)
+            if k not in ['limit', 'count', 'page']
+        }
 
     def resources(self):
         yield onready('''
@@ -374,13 +369,10 @@ class JQueryMixin(object):
         container_cls='container')
 
     def resources(self):
-        for r in super(JQueryMixin, self).resources():
-            yield r
+        yield from super(JQueryMixin, self).resources()
         if self.js_plugin_file is not None:
             yield self.js_plugin_file
-        opts = dict(
-            (k, getattr(self, k))
-            for k in self.js_params)
+        opts = {k: getattr(self, k) for k in self.js_params}
         yield onready('''
 $(document).bind('clone', function () {
     $('.%s').%s(%s); });
@@ -465,8 +457,7 @@ class DateField(JQueryMixin, ew.TextField):
         css_class='ui-date-field')
 
     def resources(self):
-        for r in super(DateField, self).resources():
-            yield r
+        yield from super(DateField, self).resources()
         yield ew.JSLink('allura/js/jquery-ui.min.js', location='body_top_js')
         yield ew.CSSLink('allura/css/smoothness/jquery-ui.min.css', compress=False)  # compress will also serve from a different location, breaking image refs
 
@@ -491,8 +482,7 @@ class AdminField(ew.InputField):
             setattr(self, p, getattr(self.field, p))
 
     def resources(self):
-        for r in self.field.resources():
-            yield r
+        yield from self.field.resources()
 
 
 class Lightbox(ew_core.Widget):

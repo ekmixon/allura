@@ -53,10 +53,10 @@ class TroveAdminException(Exception):
 class TroveCategoryController(BaseController):
     @expose()
     def _lookup(self, trove_cat_id, *remainder):
-        cat = M.TroveCategory.query.get(trove_cat_id=int(trove_cat_id))
-        if not cat:
+        if cat := M.TroveCategory.query.get(trove_cat_id=int(trove_cat_id)):
+            return TroveCategoryController(category=cat), remainder
+        else:
             raise HTTPNotFound
-        return TroveCategoryController(category=cat), remainder
 
     def _check_security(self):
         require_authenticated()
@@ -73,10 +73,10 @@ class TroveCategoryController(BaseController):
 
     @expose('jinja:allura:templates/trovecategories.html')
     def index(self, **kw):
+        hierarchy = []
         if self.category:
             selected_cat = self.category
             l = self.category.subcategories
-            hierarchy = []
             temp_cat = self.category.parent_category
             while temp_cat:
                 hierarchy = [temp_cat] + hierarchy
@@ -84,7 +84,6 @@ class TroveCategoryController(BaseController):
         else:
             l = M.TroveCategory.query.find(dict(trove_parent_id=0)).sort('fullname').all()
             selected_cat = None
-            hierarchy = []
         return dict(
             categories=l,
             selected_cat=selected_cat,
@@ -95,11 +94,10 @@ class TroveCategoryController(BaseController):
         if not category:
             return ()
 
-        children = {
-            key: value
-            for (key, value) in
+        children = dict(
             (self.generate_category(child) for child in category.subcategories)
-        }
+        )
+
 
         return category.fullname, OrderedDict(sorted(six.iteritems(children)))
 
@@ -107,11 +105,7 @@ class TroveCategoryController(BaseController):
     @expose('jinja:allura:templates/browse_trove_categories.html')
     def browse(self):
         parent_categories = M.TroveCategory.query.find(dict(trove_parent_id=0)).all()
-        tree = {
-            key: value
-            for (key, value) in
-            (self.generate_category(child) for child in parent_categories)
-        }
+        tree = dict((self.generate_category(child) for child in parent_categories))
         return dict(tree=OrderedDict(sorted(six.iteritems(tree))))
 
     @classmethod
@@ -124,36 +118,39 @@ class TroveCategoryController(BaseController):
         elif upper is None:
             raise TroveAdminException(('Invalid upper category.', "error"))
         else:
-            path = upper.fullpath + " :: " + name
+            path = f"{upper.fullpath} :: {name}"
             show_as_skill = upper.show_as_skill
 
-        newid = max(
-            [el.trove_cat_id for el in M.TroveCategory.query.find()]) + 1
+        newid = (max(el.trove_cat_id for el in M.TroveCategory.query.find()) + 1)
         shortname = h.slugify(shortname or name, True)[1]
 
         if upper:
             trove_type = upper.fullpath.split(' :: ')[0]
-            fullpath_re = re.compile(r'^{} :: '.format(re.escape(trove_type)))  # e.g. scope within "Topic :: "
+            fullpath_re = re.compile(f'^{re.escape(trove_type)} :: ')
         else:
             # no parent, so making a top-level.  Don't limit fullpath_re, so enforcing global uniqueness
             fullpath_re = re.compile(r'')
-        oldcat = M.TroveCategory.query.get(shortname=shortname, fullpath=fullpath_re)
-
-        if oldcat:
+        if oldcat := M.TroveCategory.query.get(
+            shortname=shortname, fullpath=fullpath_re
+        ):
             raise TroveAdminException(
-                ('A category with shortname "%s" already exists (%s).  Try a different, unique shortname' % (shortname, oldcat.fullpath), "error"),
-                '?categoryname={}&shortname={}'.format(name, shortname),
-                upper
+                (
+                    'A category with shortname "%s" already exists (%s).  Try a different, unique shortname'
+                    % (shortname, oldcat.fullpath),
+                    "error",
+                ),
+                f'?categoryname={name}&shortname={shortname}',
+                upper,
             )
-        else:
-            M.TroveCategory(
-                trove_cat_id=newid,
-                trove_parent_id=upper_id,
-                fullname=name,
-                shortname=shortname,
-                fullpath=path,
-                show_as_skill=show_as_skill)
-            return upper, ('Category "%s" successfully created.' % name,), ''
+
+        M.TroveCategory(
+            trove_cat_id=newid,
+            trove_parent_id=upper_id,
+            fullname=name,
+            shortname=shortname,
+            fullpath=path,
+            show_as_skill=show_as_skill)
+        return upper, ('Category "%s" successfully created.' % name,), ''
 
     @expose()
     @require_post()
@@ -161,7 +158,7 @@ class TroveCategoryController(BaseController):
     def create(self, **kw):
         name = kw.get('categoryname')
         upper_id = int(kw.get('uppercategory_id', 0))
-        shortname = kw.get('shortname', None)
+        shortname = kw.get('shortname')
 
         try:
             upper, flash_args, redir_params = self._create(name, upper_id, shortname)
@@ -173,9 +170,9 @@ class TroveCategoryController(BaseController):
         flash(*flash_args)
 
         if upper:
-            redirect('/categories/{}/{}'.format(upper.trove_cat_id, redir_params))
+            redirect(f'/categories/{upper.trove_cat_id}/{redir_params}')
         else:
-            redirect('/categories/{}'.format(redir_params))
+            redirect(f'/categories/{redir_params}')
 
     @expose()
     @require_post()
@@ -185,82 +182,115 @@ class TroveCategoryController(BaseController):
         if cat.trove_parent_id:
             parent = M.TroveCategory.query.get(
                 trove_cat_id=cat.trove_parent_id)
-            redirecturl = '/categories/%s' % parent.trove_cat_id
+            redirecturl = f'/categories/{parent.trove_cat_id}'
         else:
             redirecturl = '/categories'
         if len(cat.subcategories) > 0:
-            m = "This category contains at least one sub-category, "
-            m = m + "therefore it can't be removed."
+            m = (
+                "This category contains at least one sub-category, "
+                + "therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.User.withskill(cat).count() > 0:
-            m = "This category is used as a skill by at least a user, "
-            m = m + "therefore it can't be removed."
+            m = (
+                "This category is used as a skill by at least a user, "
+                + "therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_root_database=cat._id):
-            m = "This category is used as a database by at least a project, "
-            m = m + "therefore it can't be removed."
+            m = (
+                "This category is used as a database by at least a project, "
+                + "therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_developmentstatus=cat._id):
-            m = "This category is used as development status by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as development status by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_audience=cat._id):
-            m = "This category is used as intended audience by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as intended audience by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_license=cat._id):
-            m = "This category is used as a license by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as a license by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_os=cat._id):
-            m = "This category is used as operating system by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as operating system by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_language=cat._id):
-            m = "This category is used as programming language by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as programming language by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_topic=cat._id):
-            m = "This category is used as a topic by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as a topic by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_natlanguage=cat._id):
-            m = "This category is used as a natural language by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as a natural language by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return
 
         if M.Project.query.get(trove_environment=cat._id):
-            m = "This category is used as an environment by at least a "
-            m = m + "project, therefore it can't be removed."
+            m = (
+                "This category is used as an environment by at least a "
+                + "project, therefore it can't be removed."
+            )
+
             flash(m, "error")
             redirect(redirecturl)
             return

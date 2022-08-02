@@ -60,11 +60,9 @@ class NexmoPhoneService(PhoneService):
             msg = 'Failed sending request to Nexmo'
         if str(code) == '3' and msg.endswith(' number'):
             msg = jinja2.Markup(
-                '{}{}{}'.format(
-                    cgi.escape(msg),  # escape it just in case Nexmo sent some HTML we don't want through
-                    '<br>Make sure you include the country code (see examples above)',
-                    '. For US numbers, you must include <code>1-</code> before the area code.' if len(number) == 10 else '',
-                ))
+                f"{cgi.escape(msg)}<br>Make sure you include the country code (see examples above){'. For US numbers, you must include <code>1-</code> before the area code.' if len(number) == 10 else ''}"
+            )
+
 
         return {'status': 'error', 'error': msg}
 

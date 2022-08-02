@@ -54,19 +54,25 @@ class RecloneRepoCommand(base.Command):
     def _load_objects(self):
         '''Load objects to be operated on.'''
         c.user = M.User.query.get(username='sfrobot')
-        nbhd = M.Neighborhood.query.get(url_prefix='/%s/' % self.options.nbhd)
-        assert nbhd, 'Neighborhood with prefix %s not found' % self.options.nbhd
+        nbhd = M.Neighborhood.query.get(url_prefix=f'/{self.options.nbhd}/')
+        assert nbhd, f'Neighborhood with prefix {self.options.nbhd} not found'
         c.project = M.Project.query.get(
             shortname=self.args[1], neighborhood_id=nbhd._id)
-        assert c.project, 'Project with shortname %s not found in neighborhood %s' % (
-            self.args[1], nbhd.name)
+        assert (
+            c.project
+        ), f'Project with shortname {self.args[1]} not found in neighborhood {nbhd.name}'
+
         c.app = c.project.app_instance(self.args[2])
-        assert c.app, 'Mount point %s not found on project %s' % (
-            self.args[2], c.project.shortname)
+        assert (
+            c.app
+        ), f'Mount point {self.args[2]} not found on project {c.project.shortname}'
 
     def _clone_repo(self):
         '''Initiate the repo clone.'''
         source_url = c.app.config.options.get('init_from_url')
         source_path = c.app.config.options.get('init_from_path')
-        assert source_url or source_path, '%s does not appear to be a cloned repo' % c.app
+        assert (
+            source_url or source_path
+        ), f'{c.app} does not appear to be a cloned repo'
+
         c.app.repo.init_as_clone(source_path, None, source_url)

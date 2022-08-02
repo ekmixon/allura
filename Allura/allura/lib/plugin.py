@@ -229,7 +229,7 @@ class AuthenticationProvider(object):
 
     def login_check_password_change_needed(self, user, password, login_details):
         if not self.hibp_password_check_enabled() \
-                or not asbool(tg.config.get('auth.hibp_failure_force_pwd_change', False)):
+                    or not asbool(tg.config.get('auth.hibp_failure_force_pwd_change', False)):
             return
 
         try:
@@ -245,8 +245,11 @@ class AuthenticationProvider(object):
 
             if trusted:
                 # current user must change password
-                h.auditlog_user('Successful login with password in HIBP breach database, '
-                                'from trusted source (reason: {})'.format(trusted), user=user)
+                h.auditlog_user(
+                    f'Successful login with password in HIBP breach database, from trusted source (reason: {trusted})',
+                    user=user,
+                )
+
                 return 'hibp'  # reason
             else:
                 # current user may not continue, must reset password via email
@@ -369,7 +372,7 @@ class AuthenticationProvider(object):
         :rtype: str
         '''
         # default implementation for any providers that haven't implemented this newer method yet
-        return '/{}/'.format(self.user_project_shortname(user))
+        return f'/{self.user_project_shortname(user)}/'
 
     def user_by_project_shortname(self, shortname, include_disabled=False):
         '''
@@ -416,9 +419,7 @@ class AuthenticationProvider(object):
         last_updated = self.get_last_password_updated(user)
         if days and now - last_updated > timedelta(days=days):
             return True
-        if before and last_updated < datetime.utcfromtimestamp(before):
-            return True
-        return False
+        return bool(before and last_updated < datetime.utcfromtimestamp(before))
 
     def index_user(self, user):
         """Put here additional fields for user index in SOLR."""
@@ -429,9 +430,7 @@ class AuthenticationProvider(object):
         about the user.
         Links will show up at admin user search page.
         '''
-        return [
-            ('/nf/admin/user/%s' % user.username, 'Details/Edit'),
-        ]
+        return [(f'/nf/admin/user/{user.username}', 'Details/Edit')]
 
     def hibp_password_check_enabled(self):
         return asbool(tg.config.get('auth.hibp_password_check', False))
@@ -459,12 +458,14 @@ class AuthenticationProvider(object):
     def login_details_from_auditlog(self, auditlog):
         from allura import model as M
         ip = ua = None
-        matches = re.search(r'^IP Address: (.+)\n', auditlog.message, re.MULTILINE)
-        if matches:
-            ip = matches.group(1)
-        matches = re.search(r'^User-Agent: (.+)\n', auditlog.message, re.MULTILINE)
-        if matches:
-            ua = matches.group(1)
+        if matches := re.search(
+            r'^IP Address: (.+)\n', auditlog.message, re.MULTILINE
+        ):
+            ip = matches[1]
+        if matches := re.search(
+            r'^User-Agent: (.+)\n', auditlog.message, re.MULTILINE
+        ):
+            ua = matches[1]
         if ua or ip:
             return M.UserLoginDetails(
                 user_id=auditlog.user_id,
@@ -560,9 +561,7 @@ class LocalAuthenticationProvider(AuthenticationProvider):
             return False
         salt = str(user.password[6:6 + user.SALT_LEN])
         check = self._encode_password(password, salt)
-        if check != user.password:
-            return False
-        return True
+        return check == user.password
 
     def by_username(self, username):
         from allura import model as M
@@ -570,24 +569,24 @@ class LocalAuthenticationProvider(AuthenticationProvider):
         escaped_underscore = re.escape('_')  # changes in py3.x versions # https://docs.python.org/3/library/re.html#re.escape
         un = un.replace(escaped_underscore, '[-_]')
         un = un.replace(r'\-', '[-_]')
-        rex = re.compile('^' + un + '$')
+        rex = re.compile(f'^{un}$')
         return M.User.query.get(username=rex, disabled=False, pending=False)
 
     def set_password(self, user, old_password, new_password):
-        if old_password is not None and not self.validate_password(user, old_password):
+        if old_password is not None and not self.validate_password(
+            user, old_password
+        ):
             raise exc.HTTPUnauthorized()
-        else:
-            user.password = self._encode_password(new_password)
-            user.last_password_updated = datetime.utcnow()
-            session(user).flush(user)
+        user.password = self._encode_password(new_password)
+        user.last_password_updated = datetime.utcnow()
+        session(user).flush(user)
 
     def _encode_password(self, password, salt=None):
         from allura import model as M
         if salt is None:
-            salt = ''.join(chr(randint(1, 0x7f))
-                           for i in range(M.User.SALT_LEN))
+            salt = ''.join(chr(randint(1, 0x7f)) for _ in range(M.User.SALT_LEN))
         hashpass = sha256((salt + password).encode('utf-8')).digest()
-        return 'sha256' + salt + six.ensure_text(b64encode(hashpass))
+        return f'sha256{salt}{six.ensure_text(b64encode(hashpass))}'
 
     def user_project_shortname(self, user):
         # "_" isn't valid for subdomains (which project names are used with)
@@ -599,7 +598,7 @@ class LocalAuthenticationProvider(AuthenticationProvider):
         # in contrast with above user_project_shortname()
         # we allow the URL of a user-project to match the username exactly, even if user-project's name is different
         # (nbhd_lookup_first_path will figure it out)
-        return '/u/{}/'.format(user.username)
+        return f'/u/{user.username}/'
 
     def user_by_project_shortname(self, shortname, include_disabled=False):
         from allura import model as M
@@ -618,9 +617,7 @@ class LocalAuthenticationProvider(AuthenticationProvider):
         return ''
 
     def user_registration_date(self, user):
-        if user._id:
-            return user._id.generation_time
-        return datetime.utcnow()
+        return user._id.generation_time if user._id else datetime.utcnow()
 
     def get_last_password_updated(self, user):
         d = user.last_password_updated
@@ -651,9 +648,7 @@ def ldap_user_dn(username):
     'return a Distinguished Name for a given username'
     if not username:
         raise ValueError('Empty username')
-    return 'uid=%s,%s' % (
-        ldap.dn.escape_dn_chars(username),
-        config['auth.ldap.suffix'])
+    return f"uid={ldap.dn.escape_dn_chars(username)},{config['auth.ldap.suffix']}"
 
 
 class LdapAuthenticationProvider(AuthenticationProvider):
@@ -667,10 +662,9 @@ class LdapAuthenticationProvider(AuthenticationProvider):
             if asbool(config.get('auth.allow_user_registration', True)):
                 raise Exception('You should not have both "auth.ldap.autoregister" and '
                                 '"auth.allow_user_registration" set to true')
-            else:
-                log.debug('LdapAuth: autoregister is true, so only creating the mongo '
-                          'record (not creating ldap record)')
-                return result
+            log.debug('LdapAuth: autoregister is true, so only creating the mongo '
+                      'record (not creating ldap record)')
+            return result
 
         # full registration into LDAP
         uid = str(M.AuthGlobals.get_next_uid()).encode('utf-8')
@@ -696,8 +690,8 @@ class LdapAuthenticationProvider(AuthenticationProvider):
         con.unbind_s()
 
         if asbool(config.get('auth.ldap.use_schroot', True)):
-            argv = ('schroot -d / -c %s -u root /ldap-userconfig.py init %s' % (
-                config['auth.ldap.schroot_name'], user_doc['username'])).split()
+            argv = f"schroot -d / -c {config['auth.ldap.schroot_name']} -u root /ldap-userconfig.py init {user_doc['username']}".split()
+
             p = subprocess.Popen(
                 argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             rc = p.wait()
@@ -710,8 +704,10 @@ class LdapAuthenticationProvider(AuthenticationProvider):
         if not asbool(config.get('auth.ldap.use_schroot', True)):
             raise NotImplementedError('SSH keys are not supported')
 
-        argv = ('schroot -d / -c %s -u root /ldap-userconfig.py upload %s' % (
-            config['auth.ldap.schroot_name'], username)).split() + [pubkey]
+        argv = f"schroot -d / -c {config['auth.ldap.schroot_name']} -u root /ldap-userconfig.py upload {username}".split() + [
+            pubkey
+        ]
+
         p = subprocess.Popen(
             argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         rc = p.wait()
@@ -728,13 +724,14 @@ class LdapAuthenticationProvider(AuthenticationProvider):
 
     def _encode_password(self, password, salt=None):
         cfg_prefix = 'auth.ldap.password.'
-        salt_len = asint(config.get(cfg_prefix + 'salt_len', 16))
-        algorithm = config.get(cfg_prefix + 'algorithm', 6)
-        rounds = asint(config.get(cfg_prefix + 'rounds', 6000))
+        salt_len = asint(config.get(f'{cfg_prefix}salt_len', 16))
+        algorithm = config.get(f'{cfg_prefix}algorithm', 6)
+        rounds = asint(config.get(f'{cfg_prefix}rounds', 6000))
         salt = self._get_salt(salt_len) if salt is None else salt
         encrypted = crypt.crypt(
-            six.ensure_str(password),
-            '$%s$rounds=%s$%s' % (algorithm, rounds, salt))
+            six.ensure_str(password), f'${algorithm}$rounds={rounds}${salt}'
+        )
+
         return b'{CRYPT}%s' % encrypted.encode('utf-8')
 
     def by_username(self, username):
@@ -773,17 +770,19 @@ class LdapAuthenticationProvider(AuthenticationProvider):
         user = M.User.query.get(username=username)
         if user is None:
             if asbool(config.get('auth.ldap.autoregister', True)):
-                log.debug('LdapAuth: authorized user {} needs a mongo record registered.  '
-                          'Creating...'.format(username))
+                log.debug(
+                    f'LdapAuth: authorized user {username} needs a mongo record registered.  Creating...'
+                )
+
                 user = M.User.register({'username': username,
                                         'display_name': LdapUserPreferencesProvider()._get_pref(username,
                                                                                                 'display_name'),
                                         })
             else:
-                log.debug('LdapAuth: no user {} found in local mongo'.format(username))
+                log.debug(f'LdapAuth: no user {username} found in local mongo')
                 raise exc.HTTPUnauthorized()
         elif user.disabled or user.pending:
-            log.debug('LdapAuth: user {} is disabled or pending in Allura'.format(username))
+            log.debug(f'LdapAuth: user {username} is disabled or pending in Allura')
             raise exc.HTTPUnauthorized()
         return user
 
@@ -803,7 +802,7 @@ class LdapAuthenticationProvider(AuthenticationProvider):
             con.unbind_s()
             return True
         except (ldap.INVALID_CREDENTIALS, ldap.UNWILLING_TO_PERFORM, ldap.NO_SUCH_OBJECT):
-            log.debug('LdapAuth: could not authenticate {}'.format(username), exc_info=True)
+            log.debug(f'LdapAuth: could not authenticate {username}', exc_info=True)
         return False
 
     def user_project_shortname(self, user):
@@ -905,17 +904,18 @@ class ProjectRegistrationProvider(object):
             return True
         if security.has_access(neighborhood, 'admin', user=user)():
             return True
-        admin_in = [p for p in user.my_projects_by_role_name('Admin')
-                    if p.neighborhood_id == neighborhood._id]
-        if len(admin_in) > 0:
+        if admin_in := [
+            p
+            for p in user.my_projects_by_role_name('Admin')
+            if p.neighborhood_id == neighborhood._id
+        ]:
             return True
         return bool(user.get_tool_data('phone_verification', 'number_hash'))
 
     def verify_phone(self, user, number, allow_reuse=False):
         from allura import model as M
-        ok = {'status': 'ok'}
         if not asbool(config.get('project.verify_phone')):
-            return ok
+            return {'status': 'ok'}
         number = utils.clean_phone_number(number)
         number_hash = utils.phone_number_hash(number)
         if not allow_reuse and M.User.query.find({'tool_data.phone_verification.number_hash': number_hash}).count():
@@ -934,32 +934,33 @@ class ProjectRegistrationProvider(object):
         return g.phone_service.verify(number)
 
     def check_phone_verification(self, user, request_id, pin, number_hash):
-        ok = {'status': 'ok'}
         if not asbool(config.get('project.verify_phone')):
-            return ok
+            return {'status': 'ok'}
         res = g.phone_service.check(request_id, pin)
         if res.get('status') == 'ok':
             user.set_tool_data('phone_verification', number_hash=number_hash)
-            msg = 'Phone verification succeeded. Hash: {}'.format(number_hash)
-            h.auditlog_user(msg, user=user)
+            msg = f'Phone verification succeeded. Hash: {number_hash}'
         else:
-            msg = 'Phone verification failed. Hash: {}'.format(number_hash)
-            h.auditlog_user(msg, user=user)
+            msg = f'Phone verification failed. Hash: {number_hash}'
+        h.auditlog_user(msg, user=user)
         return res
 
     def register_neighborhood_project(self, neighborhood, users, allow_register=False):
         from allura import model as M
         shortname = '--init--'
-        name = 'Home Project for %s' % neighborhood.name
-        p = M.Project(neighborhood_id=neighborhood._id,
-                      shortname=shortname,
-                      name=name,
-                      short_description='',
-                      description='You can edit this description in the admin page',
-                      homepage_title='# ' + name,
-                      last_updated=datetime.utcnow(),
-                      is_nbhd_project=True,
-                      is_root=True)
+        name = f'Home Project for {neighborhood.name}'
+        p = M.Project(
+            neighborhood_id=neighborhood._id,
+            shortname=shortname,
+            name=name,
+            short_description='',
+            description='You can edit this description in the admin page',
+            homepage_title=f'# {name}',
+            last_updated=datetime.utcnow(),
+            is_nbhd_project=True,
+            is_root=True,
+        )
+
         try:
             p.configure_project(
                 users=users,
@@ -969,7 +970,7 @@ class ProjectRegistrationProvider(object):
                     ('admin', 'admin', 'Admin')])
         except Exception:
             ThreadLocalORMSession.close_all()
-            log.exception('Error registering project %s' % p)
+            log.exception(f'Error registering project {p}')
             raise
         if allow_register:
             role_auth = M.ProjectRole.authenticated(p)
@@ -1008,7 +1009,7 @@ class ProjectRegistrationProvider(object):
                 is_nbhd_project=False,
             )).count()
             if count >= nb_max_projects:
-                log.exception('Error registering project %s' % project_name)
+                log.exception(f'Error registering project {project_name}')
                 raise forge_exc.ProjectOverlimitError()
 
         self.rate_limit(user, neighborhood)
@@ -1022,16 +1023,18 @@ class ProjectRegistrationProvider(object):
             check_shortname = shortname
         self.shortname_validator.to_python(check_shortname, neighborhood=neighborhood)
 
-        p = M.Project.query.get(shortname=shortname, neighborhood_id=neighborhood._id)
-        if p:
+        if p := M.Project.query.get(
+            shortname=shortname, neighborhood_id=neighborhood._id
+        ):
             raise forge_exc.ProjectConflict(
-                '%s already exists in nbhd %s' % (shortname, neighborhood._id))
+                f'{shortname} already exists in nbhd {neighborhood._id}'
+            )
 
     def index_project(self, project):
         """
         Put here additional fields given project should be indexed by SOLR.
         """
-        return dict()
+        return {}
 
     def _create_project(self, neighborhood, shortname, project_name, user, user_project, private_project, apps,
                         omit_event=False):
@@ -1064,7 +1067,7 @@ class ProjectRegistrationProvider(object):
             for obj in project_template['groups']:
                 name = obj.get('name')
                 permissions = set(obj.get('permissions', [])) & \
-                    set(p.permissions)
+                        set(p.permissions)
                 usernames = obj.get('usernames', [])
                 # Must provide a group name
                 if not name:
@@ -1093,7 +1096,7 @@ class ProjectRegistrationProvider(object):
                 for k, v in six.iteritems(tool_options):
                     if isinstance(v, six.string_types):
                         tool_options[k] = \
-                            string.Template(v).safe_substitute(
+                                string.Template(v).safe_substitute(
                                 p.__dict__.get('root_project', {}))
                 if p.app_instance(tool) is None:
                     app = p.install_app(tool,
@@ -1115,7 +1118,7 @@ class ProjectRegistrationProvider(object):
             p.labels = project_template['labels']
         if 'trove_cats' in project_template:
             for trove_type in project_template['trove_cats'].keys():
-                troves = getattr(p, 'trove_%s' % trove_type)
+                troves = getattr(p, f'trove_{trove_type}')
                 for trove_id in project_template['trove_cats'][trove_type]:
                     troves.append(
                         M.TroveCategory.query.get(trove_cat_id=trove_id)._id)
@@ -1151,7 +1154,7 @@ class ProjectRegistrationProvider(object):
     def register_subproject(self, project, name, user, install_apps, project_name=None):
         from allura import model as M
         assert h.re_project_name.match(name), 'Invalid subproject shortname'
-        shortname = project.shortname + '/' + name
+        shortname = f'{project.shortname}/{name}'
         ordinal = int(project.ordered_mounts(include_hidden=True)
                       [-1]['ordinal']) + 1
         sp = M.Project(
@@ -1210,12 +1213,9 @@ class ProjectRegistrationProvider(object):
                 log.info('User %s is already disabled', user.username)
                 continue
             provider.disable_user(user, audit=False)
-            msg = 'Account disabled because project {}{} is deleted. Reason: {}'.format(
-                project.neighborhood.url_prefix,
-                project.shortname,
-                reason)
-            auditlog = h.auditlog_user(msg, user=user)
-            if auditlog:
+            msg = f'Account disabled because project {project.neighborhood.url_prefix}{project.shortname} is deleted. Reason: {reason}'
+
+            if auditlog := h.auditlog_user(msg, user=user):
                 session(auditlog).flush(auditlog)
             else:
                 log.error('For some reason no auditlog written in disable_project_users for: %s %s', user, msg)
@@ -1241,8 +1241,8 @@ class ProjectRegistrationProvider(object):
         Links will show up at admin project search page
         '''
         return [
-            (project.url() + 'admin/groups/', 'Members'),
-            (project.url() + 'admin/audit/', 'Audit Trail'),
+            (f'{project.url()}admin/groups/', 'Members'),
+            (f'{project.url()}admin/audit/', 'Audit Trail'),
         ]
 
     def project_from_url(self, url):
@@ -1256,7 +1256,7 @@ class ProjectRegistrationProvider(object):
             return None, 'Empty url'
         url = urlparse(url)
         url = [u for u in url.path.split('/') if u]
-        if len(url) == 0:
+        if not url:
             return None, 'Empty url'
         if len(url) == 1:
             q = Project.query.find(dict(shortname=url[0]))
@@ -1265,15 +1265,15 @@ class ProjectRegistrationProvider(object):
                 return None, 'Project not found'
             if cnt == 1:
                 return q.first(), None
-            return None, 'Too many matches for project: {}'.format(cnt)
-        n = Neighborhood.query.get(url_prefix='/{}/'.format(url[0]))
+            return None, f'Too many matches for project: {cnt}'
+        n = Neighborhood.query.get(url_prefix=f'/{url[0]}/')
         if not n:
             return None, 'Neighborhood not found'
         p = Project.query.get(neighborhood_id=n._id, shortname=n.shortname_prefix + url[1])
         if len(url) > 2:
-            # Maybe subproject
-            subp = Project.query.get(neighborhood_id=n._id, shortname='{}/{}'.format(*url[1:3]))
-            if subp:
+            if subp := Project.query.get(
+                neighborhood_id=n._id, shortname='{}/{}'.format(*url[1:3])
+            ):
                 return (subp, None)
         return (p, 'Project not found' if p is None else None)
 
@@ -1320,10 +1320,9 @@ class ThemeProvider(object):
     @classmethod
     def register_ew_resources(cls, manager, name):
         manager.register_directory(
-            'theme/%s' % name,
-            pkg_resources.resource_filename(
-                'allura',
-                os.path.join('nf', name)))
+            f'theme/{name}',
+            pkg_resources.resource_filename('allura', os.path.join('nf', name)),
+        )
 
     def href(self, href, theme_name=None):
         '''
@@ -1334,7 +1333,7 @@ class ThemeProvider(object):
         '''
         if theme_name is None:
             theme_name = config.get('theme', 'allura')
-        return g.resource_manager.absurl('theme/%s/%s' % (theme_name, href))
+        return g.resource_manager.absurl(f'theme/{theme_name}/{href}')
 
     @LazyProperty
     def personal_data_form(self):
@@ -1499,15 +1498,14 @@ class ThemeProvider(object):
         """
         if isinstance(app, six.text_type):
             app = str(app)
-        if isinstance(app, str):
-            if app in self.icons and size in self.icons[app]:
-                return g.theme_href(self.icons[app][size])
-            elif app in g.entry_points['tool']:
-                return g.entry_points['tool'][app].icon_url(size)
-            else:
-                return None
-        else:
+        if not isinstance(app, str):
             return app.icon_url(size)
+        if app in self.icons and size in self.icons[app]:
+            return g.theme_href(self.icons[app][size])
+        elif app in g.entry_points['tool']:
+            return g.entry_points['tool'][app].icon_url(size)
+        else:
+            return None
 
     def _get_site_notification(self, url='', user=None, tool_name='', site_notification_cookie_value=''):
         from allura.model.notification import SiteNotification
@@ -1537,8 +1535,7 @@ class ThemeProvider(object):
             if note.page_tool_type and tool_name.lower() != note.page_tool_type.lower():
                 continue
 
-            views_closed = cookie_info.get(str(note._id))
-            if views_closed:
+            if views_closed := cookie_info.get(str(note._id)):
                 views, closed = views_closed
             else:
                 views = 0
@@ -1559,9 +1556,11 @@ class ThemeProvider(object):
                 del cookie_info[note_id]
 
         if note_to_show:
-            cookie_chunks = []
-            for note_id, views_closed in six.iteritems(cookie_info):
-                cookie_chunks.append('{}-{}-{}'.format(note_id, views_closed[0], views_closed[1]))
+            cookie_chunks = [
+                f'{note_id}-{views_closed[0]}-{views_closed[1]}'
+                for note_id, views_closed in six.iteritems(cookie_info)
+            ]
+
             set_cookie_value = '_'.join(sorted(cookie_chunks))
             return note_to_show, set_cookie_value
 
@@ -1752,7 +1751,7 @@ class LdapUserPreferencesProvider(UserPreferencesProvider):
         else:
             con.unbind_s()
         if not rs:
-            log.warning('LdapUserPref: No user record found for: {}'.format(username))
+            log.warning(f'LdapUserPref: No user record found for: {username}')
             return ''
         user_dn, user_attrs = rs[0]
         ldap_attr = self.fields[pref_name]
@@ -1760,14 +1759,13 @@ class LdapUserPreferencesProvider(UserPreferencesProvider):
         return user_attrs[ldap_attr][0].decode('utf-8')
 
     def set_pref(self, user, pref_name, pref_value):
-        if pref_name in self.fields:
-            con = ldap_conn()
-            ldap_attr = self.fields[pref_name]
-            con.modify_s(ldap_user_dn(user.username),
-                         [(ldap.MOD_REPLACE, ldap_attr, pref_value.encode('utf-8'))])
-            con.unbind_s()
-        else:
+        if pref_name not in self.fields:
             return LocalUserPreferencesProvider().set_pref(user, pref_name, pref_value)
+        con = ldap_conn()
+        ldap_attr = self.fields[pref_name]
+        con.modify_s(ldap_user_dn(user.username),
+                     [(ldap.MOD_REPLACE, ldap_attr, pref_value.encode('utf-8'))])
+        con.unbind_s()
 
 
 class AdminExtension(object):
@@ -1852,19 +1850,16 @@ class ImportIdConverter(object):
         '''
         :rtype: ImportIdConverter
         '''
-        converter = config.get('import_id_converter')
-        if converter:
+        if converter := config.get('import_id_converter'):
             return g.entry_points['allura.import_id_converter'][converter]()
         return cls()
 
     def simplify(self, import_id):
-        if hasattr(import_id, 'get'):
-            return import_id.get('source_id')
-        return None
+        return import_id.get('source_id') if hasattr(import_id, 'get') else None
 
     def expand(self, source_id, app_instance):
         import_id = {
             'source_id': source_id,
         }
-        import_id.update(app_instance.config.options.get('import_id', {}))
+        import_id |= app_instance.config.options.get('import_id', {})
         return import_id

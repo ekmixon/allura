@@ -41,8 +41,7 @@ class SCMLogWidget(ew_core.Widget):
 
     def resources(self):
         for f in self.fields:
-            for r in f.resources():
-                yield r
+            yield from f.resources()
 
 
 class SCMRevisionWidget(ew_core.Widget):
@@ -69,20 +68,20 @@ class SCMMergeRequestWidget(ff.ForgeForm):
 
     @property
     def fields(self):
-        result = [
-            ew.TextField(
-                name='summary',
-                attrs={'style': 'width: 93.5%;'}),
+        return [
+            ew.TextField(name='summary', attrs={'style': 'width: 93.5%;'}),
             ew.SingleSelectField(
                 name='source_branch',
                 label='Source Branch',
-                options=self.source_branches),
+                options=self.source_branches,
+            ),
             ew.SingleSelectField(
                 name='target_branch',
                 label='Target Branch',
-                options=self.target_branches),
-            ffw.MarkdownEdit(name='description')]
-        return result
+                options=self.target_branches,
+            ),
+            ffw.MarkdownEdit(name='description'),
+        ]
 
     @property
     def buttons(self):

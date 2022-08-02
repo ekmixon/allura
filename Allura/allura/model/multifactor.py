@@ -28,19 +28,27 @@ from .session import main_orm_session
 log = logging.getLogger(__name__)
 
 
+
+
 class TotpKey(MappedClass):
     '''
     For use with "mongodb" TOTP service
     '''
 
+
+
     class __mongometa__:
         session = main_orm_session
-        name = str('multifactor_totp')
+        name = 'multifactor_totp'
         unique_indexes = ['user_id']
+
 
     _id = FieldProperty(S.ObjectId)
     user_id = FieldProperty(S.ObjectId, required=True)
     key = FieldProperty(S.Binary, required=True)  # S.Binary ok?  ming 0.5.x make_safe doesn't know about bytes/Binary
+
+
+
 
 
 class RecoveryCode(MappedClass):
@@ -48,10 +56,13 @@ class RecoveryCode(MappedClass):
     For use with "mongodb" recovery code service
     '''
 
+
+
     class __mongometa__:
         session = main_orm_session
-        name = str('multifactor_recovery_code')
+        name = 'multifactor_recovery_code'
         indexes = ['user_id']
+
 
     _id = FieldProperty(S.ObjectId)
     user_id = FieldProperty(S.ObjectId, required=True)

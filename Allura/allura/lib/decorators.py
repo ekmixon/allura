@@ -82,9 +82,8 @@ def task(*args, **kw):
         # or it gets a spurious cls argument
         func.post = staticmethod(post) if inspect.isclass(func) else post
         return func
-    if len(args) == 1 and callable(args[0]):
-        return task_(args[0])
-    return task_
+
+    return task_(args[0]) if len(args) == 1 and callable(args[0]) else task_
 
 
 class event_handler(object):
@@ -115,7 +114,8 @@ class require_post(object):
             if request.method != 'POST':
                 if self.redir is not None:
                     redirect(self.redir)
-                raise exc.HTTPMethodNotAllowed(headers={str('Allow'): str('POST')})
+                raise exc.HTTPMethodNotAllowed(headers={'Allow': 'POST'})
+
         before_validate(check_method)(func)
         return func
 
@@ -163,15 +163,14 @@ def memoize(func, instance, args, kwargs):
         dic = getattr_(func, "_memoize_dic", dict)
     else:
         # decorating a method
-        dic = getattr_(instance, "_memoize_dic__{}".format(func.__name__), dict)
+        dic = getattr_(instance, f"_memoize_dic__{func.__name__}", dict)
 
     cache_key = (args, frozenset(list(kwargs.items())))
     if cache_key in dic:
         return dic[cache_key]
-    else:
-        result = func(*args, **kwargs)
-        dic[cache_key] = result
-        return result
+    result = func(*args, **kwargs)
+    dic[cache_key] = result
+    return result
 
 
 def memoize_cleanup(obj):
@@ -207,10 +206,7 @@ def memorable_forget():
 
         # if the controller raised a 302, we can assume the value will be remembered by the app
         # if needed, and forget.
-        if raised and isinstance(raised, HTTPFound):
-            return True
-
-        return False
+        return bool(raised and isinstance(raised, HTTPFound))
 
     def forget(controller_result, raised=None):
         """

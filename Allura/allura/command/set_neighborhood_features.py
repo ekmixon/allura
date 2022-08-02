@@ -66,29 +66,27 @@ class SetNeighborhoodFeaturesCommand(base.Command):
         if not n:
             raise exceptions.NoSuchNeighborhoodError("The neighborhood %s "
                                                      "could not be found in the database" % n_id)
-        else:
-            if n_feature == "max_projects":
-                if isinstance(n_value, int) or n_value is None:
-                    n.features['max_projects'] = n_value
-                else:
-                    raise exceptions.InvalidNBFeatureValueError("max_projects must be "
-                                                                "an int or None.")
-            elif n_feature == "css":
-                if n_value in ['none', 'custom', 'picker']:
-                    n.features['css'] = n_value
-                else:
-                    raise exceptions.InvalidNBFeatureValueError("css must be "
-                                                                "'none', 'custom', or 'picker'")
-            elif n_feature == "google_analytics":
-                if isinstance(n_value, bool):
-                    n.features['google_analytics'] = n_value
-                else:
-                    raise exceptions.InvalidNBFeatureValueError("google_analytics must be "
-                                                                "a boolean")
+        if n_feature == "max_projects":
+            if isinstance(n_value, int) or n_value is None:
+                n.features['max_projects'] = n_value
             else:
-                if isinstance(n_value, bool):
-                    n.features['private_projects'] = n_value
-                else:
-                    raise exceptions.InvalidNBFeatureValueError("private_projects must be "
-                                                                "a boolean")
-            session(M.Neighborhood).flush()
+                raise exceptions.InvalidNBFeatureValueError("max_projects must be "
+                                                            "an int or None.")
+        elif n_feature == "css":
+            if n_value in ['none', 'custom', 'picker']:
+                n.features['css'] = n_value
+            else:
+                raise exceptions.InvalidNBFeatureValueError("css must be "
+                                                            "'none', 'custom', or 'picker'")
+        elif n_feature == "google_analytics":
+            if isinstance(n_value, bool):
+                n.features['google_analytics'] = n_value
+            else:
+                raise exceptions.InvalidNBFeatureValueError("google_analytics must be "
+                                                            "a boolean")
+        elif isinstance(n_value, bool):
+            n.features['private_projects'] = n_value
+        else:
+            raise exceptions.InvalidNBFeatureValueError("private_projects must be "
+                                                        "a boolean")
+        session(M.Neighborhood).flush()

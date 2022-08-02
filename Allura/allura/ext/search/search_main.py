@@ -79,16 +79,13 @@ class SearchController(BaseController):
         c.help_modal = SearchHelp(comments=False)
         pids = [c.project._id] + [p._id for p in c.project.subprojects]
         project_match = ' OR '.join(map(str, pids))
-        search_params = kw
-        search_params.update({
+        search_params = kw | {
             'q': q,
             'history': history,
             'app': False,
-            'fq': [
-                'project_id_s:(%s)' % project_match,
-                '-deleted_b:true',
-            ],
-        })
+            'fq': [f'project_id_s:({project_match})', '-deleted_b:true'],
+        }
+
         d = search_app(**search_params)
         d['search_comments_disable'] = True
         d['hide_app_project_switcher'] = True

@@ -151,13 +151,13 @@ class TracRef2(Pattern):
         Pattern.BEGIN + r'((comment:(\d+):)?(ticket:)(\d+))' + Pattern.END)
 
     def repl(self, match):
-        shortlink = M.Shortlink.lookup('#' + match.group(6))
+        shortlink = M.Shortlink.lookup(f'#{match.group(6)}')
         if shortlink and not getattr(shortlink.ref.artifact, 'deleted', False):
             url = shortlink.url
             if match.group(4):
                 slug = self.get_comment_slug(
                     shortlink.ref.artifact, match.group(4))
-                slug = '#' + slug if slug else ''
+                slug = f'#{slug}' if slug else ''
                 url = url + slug
 
             return '{front}[{ref}]({url}){back}'.format(
@@ -207,7 +207,9 @@ class TracRef3(Pattern):
         file, rev, lineno = (
             match.group(4),
             match.group(6) or 'HEAD',
-            '#l' + match.group(8) if match.group(8) else '')
+            f'#l{match.group(8)}' if match.group(8) else '',
+        )
+
         url = '{app_url}{rev}/tree/{file}{lineno}'.format(
             app_url=self.app.url,
             rev=rev,
@@ -319,11 +321,11 @@ class UserMentionInlinePattern(markdown.inlinepatterns.Pattern):
 
         if user and not user.pending and not user.disabled:
             result = markdown.util.etree.Element('a')
-            result.text = "@%s" % user_name
+            result.text = f"@{user_name}"
             result.set('href', user.url())
             result.set('class', 'user-mention')
         else:
-            result = "@%s" % user_name
+            result = f"@{user_name}"
         return result
 
 
@@ -344,8 +346,8 @@ class ForgeLinkPattern(markdown.inlinepatterns.LinkPattern):
         except IndexError:
             href = m.group(2)
             is_link_with_brackets = True
-            if el.text == 'x' or el.text == ' ':  # skip [ ] and [x] for markdown checklist
-                return '[' + el.text + ']'
+            if el.text in ['x', ' ']:  # skip [ ] and [x] for markdown checklist
+                return f'[{el.text}]'
         try:
             title = m.group(13)
         except IndexError:
@@ -369,14 +371,12 @@ class ForgeLinkPattern(markdown.inlinepatterns.LinkPattern):
         if 'notfound' in classes and not self.ext._use_wiki:
             text = el.text
             el = markdown.util.etree.Element('span')
-            el.text = '[%s]' % text
+            el.text = f'[{text}]'
         return el
 
     def _expand_alink(self, link, is_link_with_brackets):
         '''Return (href, classes) for an artifact link'''
-        classes = ''
-        if is_link_with_brackets:
-            classes = 'alink'
+        classes = 'alink' if is_link_with_brackets else ''
         href = link
         shortlink = M.Shortlink.lookup(link)
         if shortlink and shortlink.ref and not getattr(shortlink.ref.artifact, 'deleted', False):
@@ -389,8 +389,7 @@ class ForgeLinkPattern(markdown.inlinepatterns.LinkPattern):
             classes += ' notfound'
         attach_link = link.split('/attachment/')
         if len(attach_link) == 2 and self.ext._use_wiki:
-            shortlink = M.Shortlink.lookup(attach_link[0])
-            if shortlink:
+            if shortlink := M.Shortlink.lookup(attach_link[0]):
                 attach_status = ' notfound'
                 for attach in shortlink.ref.artifact.attachments:
                     if attach.filename == attach_link[1]:
@@ -408,8 +407,7 @@ class ForgeMacroPattern(markdown.inlinepatterns.Pattern):
 
     def handleMatch(self, m):
         html = self.macro(m.group(2))
-        placeholder = self.markdown.htmlStash.store(html)
-        return placeholder
+        return self.markdown.htmlStash.store(html)
 
 
 class ForgeLinkTreeProcessor(markdown.treeprocessors.Treeprocessor):
@@ -423,7 +421,7 @@ class ForgeLinkTreeProcessor(markdown.treeprocessors.Treeprocessor):
     def run(self, root):
         for node in root.getiterator('a'):
             if 'alink' in node.get('class', '').split() and node.text:
-                node.text = '[' + node.text + ']'
+                node.text = f'[{node.text}]'
         return root
 
     def reset(self):
@@ -451,10 +449,7 @@ class RelativeLinkRewriter(markdown.postprocessors.Postprocessor):
         soup = BeautifulSoup(text,
                              'html5lib')  # 'html.parser' parser gives weird </li> behaviour with test_macro_members
 
-        if self._make_absolute:
-            rewrite = self._rewrite_abs
-        else:
-            rewrite = self._rewrite
+        rewrite = self._rewrite_abs if self._make_absolute else self._rewrite
         for link in soup.findAll('a'):
             rewrite(link, 'href')
         for link in soup.findAll('img'):
@@ -484,7 +479,7 @@ class RelativeLinkRewriter(markdown.postprocessors.Postprocessor):
             return
         if val.startswith('#'):
             return
-        tag[attr] = '../' + val
+        tag[attr] = f'../{val}'
 
     def _rewrite_abs(self, tag, attr):
         self._rewrite(tag, attr)

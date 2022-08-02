@@ -64,12 +64,15 @@ def make_solr_from_config(push_servers, query_server=None, **kwargs):
     Make a :class:`Solr <Solr>` instance from config defaults.  Use
     `**kwargs` to override any value
     """
-    solr_kwargs = dict(
-        commit=asbool(config.get('solr.commit', True)),
-        commitWithin=config.get('solr.commitWithin'),
-        timeout=int(config.get('solr.long_timeout', 60)),
+    solr_kwargs = (
+        dict(
+            commit=asbool(config.get('solr.commit', True)),
+            commitWithin=config.get('solr.commitWithin'),
+            timeout=int(config.get('solr.long_timeout', 60)),
+        )
+        | kwargs
     )
-    solr_kwargs.update(kwargs)
+
     return Solr(push_servers, query_server, **solr_kwargs)
 
 
@@ -100,24 +103,15 @@ class Solr(object):
             kw['commit'] = self._commit
         if self.commitWithin and 'commitWithin' not in kw:
             kw['commitWithin'] = self.commitWithin
-        responses = []
-        for solr in self.push_pool:
-            responses.append(solr.add(*args, **kw))
-        return responses
+        return [solr.add(*args, **kw) for solr in self.push_pool]
 
     def delete(self, *args, **kw):
         if 'commit' not in kw:
             kw['commit'] = self._commit
-        responses = []
-        for solr in self.push_pool:
-            responses.append(solr.delete(*args, **kw))
-        return responses
+        return [solr.delete(*args, **kw) for solr in self.push_pool]
 
     def commit(self, *args, **kw):
-        responses = []
-        for solr in self.push_pool:
-            responses.append(solr.commit(*args, **kw))
-        return responses
+        return [solr.commit(*args, **kw) for solr in self.push_pool]
 
     def search(self, *args, **kw):
         return self.query_server.search(*args, **kw)
@@ -162,7 +156,7 @@ class MockSOLR(object):
             if part in ('&&', 'AND'):
                 continue
             if part in ('||', 'OR'):
-                log.warn("MockSOLR doesn't implement OR yet; treating as AND. q={} fq={}".format(q, fq))
+                log.warn(f"MockSOLR doesn't implement OR yet; treating as AND. q={q} fq={fq}")
                 continue
             if ':' in part:
                 field, value = part.split(':', 1)
@@ -184,9 +178,8 @@ class MockSOLR(object):
                 elif field.endswith('_b'):
                     if (asbool(value) != obj.get(field, False)) ^ neg:
                         break
-                else:
-                    if (value != str(obj.get(field, ''))) ^ neg:
-                        break
+                elif (value != str(obj.get(field, ''))) ^ neg:
+                    break
             else:
                 result.append(obj)
 

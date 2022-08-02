@@ -107,8 +107,7 @@ class CompoundError(ForgeError):
         import traceback
         parts = ['<%s>\n' % self.__class__.__name__]
         for tp, val, tb in self.args:
-            for line in traceback.format_exception(tp, val, tb):
-                parts.append('    ' + line)
+            parts.extend(f'    {line}' for line in traceback.format_exception(tp, val, tb))
         parts.append('</%s>\n' % self.__class__.__name__)
         return ''.join(parts)
 

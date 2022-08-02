@@ -226,13 +226,12 @@ def _attempt_encodings(s, encodings):
         return ''
     for enc in encodings:
         try:
-            if enc is None:
-                if six.PY3 and isinstance(s, bytes):
-                    # special handling for bytes (avoid b'asdf' turning into "b'asfd'")
-                    return s.decode('utf-8')
-                return six.text_type(s)  # try default encoding, and handle other types like int, etc
-            else:
+            if enc is not None:
                 return six.text_type(s, enc)
+            if six.PY3 and isinstance(s, bytes):
+                # special handling for bytes (avoid b'asdf' turning into "b'asfd'")
+                return s.decode('utf-8')
+            return six.text_type(s)  # try default encoding, and handle other types like int, etc
         except (UnicodeDecodeError, LookupError):
             pass
     # Return the repr of the str -- should always be safe
@@ -272,9 +271,9 @@ def find_project(url_path):
     length = len(parts)
     while length:
         shortname = '/'.join(parts[:length])
-        p = M.Project.query.get(shortname=shortname, deleted=False,
-                                neighborhood_id=n._id)
-        if p:
+        if p := M.Project.query.get(
+            shortname=shortname, deleted=False, neighborhood_id=n._id
+        ):
             return p, parts[length:]
         length -= 1
     return None, url_path.split('/')
@@ -292,9 +291,7 @@ def _make_xs(X, ids):
     from allura import model as M
     X = getattr(M, X)
     ids = list(ids)
-    results = dict(
-        (r._id, r)
-        for r in X.query.find(dict(_id={'$in': ids})))
+    results = {r._id: r for r in X.query.find(dict(_id={'$in': ids}))}
     result = (results.get(i) for i in ids)
     return (r for r in result if r is not None)
 
@@ -407,11 +404,11 @@ def push_context(project_id, mount_point=None, app_config_id=None, neighborhood=
     try:
         yield
     finally:
-        if project == ():
+        if not project:
             del c.project
         else:
             c.project = project
-        if app == ():
+        if not app:
             del c.app
         else:
             c.app = app
@@ -420,17 +417,17 @@ def push_context(project_id, mount_point=None, app_config_id=None, neighborhood=
 def encode_keys(d):
     '''Encodes the unicode keys of d, making the result
     a valid kwargs argument'''
-    return dict(
-        (six.ensure_str(k), v)
-        for k, v in six.iteritems(d))
+    return {six.ensure_str(k): v for k, v in six.iteritems(d)}
 
 
 def vardec(fun):
     def vardec_hook(remainder, params):
-        new_params = variable_decode(dict(
-            (k, v) for k, v in params.items()
-            if re_clean_vardec_key.match(k)))
+        new_params = variable_decode(
+            {k: v for k, v in params.items() if re_clean_vardec_key.match(k)}
+        )
+
         params.update(new_params)
+
     before_validate(vardec_hook)(fun)
     return fun
 
@@ -464,16 +461,13 @@ def nonce(length=4):
 
 def cryptographic_nonce(length=40):
     rand_bytes = os.urandom(length)
-    if six.PY2:
-        rand_ints = tuple(map(ord, rand_bytes))
-    else:
-        rand_ints = tuple(rand_bytes)
+    rand_ints = tuple(map(ord, rand_bytes)) if six.PY2 else tuple(rand_bytes)
     hex_format = '%.2x' * length
     return hex_format % rand_ints
 
 
 def random_password(length=20, chars=string.ascii_uppercase + string.digits):
-    return ''.join(random.choice(chars) for x in range(length))
+    return ''.join(random.choice(chars) for _ in range(length))
 
 
 def ago(start_time, show_date_after=7):
@@ -499,9 +493,9 @@ def ago(start_time, show_date_after=7):
             break
 
     if (end_time - start_time).total_seconds() >= 0:
-        return ago + ' ago'
+        return f'{ago} ago'
     else:
-        return 'in ' + ago
+        return f'in {ago}'
 
 
 def ago_ts(timestamp):
@@ -580,19 +574,18 @@ def gen_message_id(_id=None):
     else:
         parts = ['mail']
     if getattr(c, 'app', None):
-        addr = '%s.%s' % (_id, c.app.config.options['mount_point'])
+        addr = f"{_id}.{c.app.config.options['mount_point']}"
     else:
         addr = _id
-    return '%s@%s.%s' % (
-        addr, '.'.join(reversed(parts)), tg.config['domain'])
+    return f"{addr}@{'.'.join(reversed(parts))}.{tg.config['domain']}"
 
 
 class ProxiedAttrMeta(type):
 
-    def __init__(cls, name, bases, dct):
+    def __init__(self, name, bases, dct):
         for v in six.itervalues(dct):
             if isinstance(v, attrproxy):
-                v.cls = cls
+                v.cls = self
 
 
 class attrproxy(object):
@@ -602,8 +595,7 @@ class attrproxy(object):
         self.attrs = attrs
 
     def __repr__(self):
-        return '<attrproxy on %s for %s>' % (
-            self.cls, self.attrs)
+        return f'<attrproxy on {self.cls} for {self.attrs}>'
 
     def __get__(self, obj, klass=None):
         if obj is None:
@@ -627,7 +619,7 @@ class promised_attrproxy(attrproxy):
         self._promise = promise
 
     def __repr__(self):
-        return '<promised_attrproxy for %s>' % (self.attrs,)
+        return f'<promised_attrproxy for {self.attrs}>'
 
     def __getattr__(self, name):
         cls = self._promise()
@@ -658,7 +650,7 @@ class fixed_attrs_proxy(proxy):
             setattr(self, k, v)
 
 
-@tg.expose(content_type=str('text/plain'))
+@tg.expose(content_type='text/plain')
 def json_validation_error(controller, **kwargs):
     exc = request.validation['exception']
     result = dict(status='Validation Error',
@@ -690,8 +682,7 @@ def config_with_prefix(d, prefix):
     with the prefix stripped
     '''
     plen = len(prefix)
-    return dict((k[plen:], v) for k, v in six.iteritems(d)
-                if k.startswith(prefix))
+    return {k[plen:]: v for k, v in six.iteritems(d) if k.startswith(prefix)}
 
 
 @contextmanager
@@ -748,7 +739,7 @@ def _add_inline_line_numbers_to_text(txt):
         markup_text = markup_text + \
             '<span id="l%s" class="code_block"><span class="lineno">%s</span> %s</span>' % (
                 line_num, line_num, line)
-    markup_text = markup_text + '</pre></div>'
+    markup_text = f'{markup_text}</pre></div>'
     return markup_text
 
 
@@ -770,7 +761,7 @@ def _add_table_line_numbers_to_text(txt):
     for line_num, line in enumerate(lines, 1):
         markup_text = markup_text + \
             '<span id="l%s" class="code_block">%s</span>' % (line_num, line)
-    markup_text = markup_text + '</pre></div></td></tr></tbody></table>'
+    markup_text = f'{markup_text}</pre></div></td></tr></tbody></table>'
     return markup_text
 
 
@@ -799,14 +790,13 @@ def render_any_markup(name, txt, code_mode=False, linenumbers_style=TABLE):
             elif code_mode and linenumbers_style == TABLE:
                 txt = _add_table_line_numbers_to_text(txt)
             else:
-                txt = '<pre>%s</pre>' % txt
+                txt = f'<pre>{txt}</pre>'
     return Markup(txt)
 
 @contextfilter
 def subrender_jinja_filter(context, value):
     _template = context.eval_ctx.environment.from_string(value)
-    result = _template.render(**context)
-    return result
+    return _template.render(**context)
 
 def nl2br_jinja_filter(value):
     result = '<br>\n'.join(escape(line) for line in value.split('\n'))
@@ -935,10 +925,7 @@ def topological_sort(items, partial_order):
             if graph[child][0] == 0:
                 roots.append(child)
         del graph[root]
-    if len(graph) > 0:
-        # There is a loop in the input.
-        return None
-    return sorted
+    return None if graph else sorted
 
 
 @contextmanager
@@ -971,7 +958,7 @@ def ming_config_from_ini(ini_path):
 
     """
     root = pkg_resources.get_distribution('allura').location
-    conf = appconfig('config:%s' % os.path.join(root, ini_path))
+    conf = appconfig(f'config:{os.path.join(root, ini_path)}')
     with ming_config(**conf):
         yield
 
@@ -1026,7 +1013,7 @@ class exceptionless(object):
         self.log = log
 
     def __call__(self, fun):
-        fname = 'exceptionless(%s)' % fun.__name__
+        fname = f'exceptionless({fun.__name__})'
 
         def inner(*args, **kwargs):
             try:
@@ -1037,6 +1024,7 @@ class exceptionless(object):
                         'Error calling %s(args=%s, kwargs=%s): %s',
                         fname, args, kwargs, str(e))
                 return self.error_result
+
         inner.__name__ = str(fname)
         return inner
 
@@ -1066,13 +1054,10 @@ def urlopen(url, retries=3, codes=(408, 500, 502, 503, 504), timeout=None):
                 except Exception:
                     url_string = url
                 if hasattr(e, 'filename') and url_string != e.filename:
-                    url_string += ' => {}'.format(e.filename)
+                    url_string += f' => {e.filename}'
                 if timeout is None:
                     timeout = socket.getdefaulttimeout()
-                if getattr(e, 'fp', None):
-                    body = e.fp.read()
-                else:
-                    body = ''
+                body = e.fp.read() if getattr(e, 'fp', None) else ''
                 log.exception(
                     'Failed after %s retries on url with a timeout of %s: %s: %s',
                     attempts, timeout, url_string, body[:250])
@@ -1129,8 +1114,7 @@ def iter_entry_points(group, *a, **kw):
 
     """
     def active_eps():
-        disabled = aslist(
-            tg.config.get('disable_entry_points.' + group), sep=',')
+        disabled = aslist(tg.config.get(f'disable_entry_points.{group}'), sep=',')
         return [ep for ep in pkg_resources.iter_entry_points(group, *a, **kw)
                 if ep.name not in disabled]
 
@@ -1146,14 +1130,15 @@ def iter_entry_points(group, *a, **kw):
                 yield subclass(eps)
 
     def subclass(entry_points):
-        loaded = dict((ep, ep.load()) for ep in entry_points)
+        loaded = {ep: ep.load() for ep in entry_points}
         for ep, cls in six.iteritems(loaded):
             others = list(loaded.values())[:]
             others.remove(cls)
-            if all([issubclass(cls, other) for other in others]):
+            if all(issubclass(cls, other) for other in others):
                 return ep
         raise ImportError('Ambiguous [allura] entry points detected. ' +
                           'Multiple entry points with name "%s".' % entry_points[0].name)
+
     is_allura = group == 'allura' or group.startswith('allura.')
     return iter(unique_eps(active_eps()) if is_allura else active_eps())
 
@@ -1206,7 +1191,7 @@ def login_overlay(exceptions=None):
     except HTTPUnauthorized:
         if exceptions:
             for exception in exceptions:
-                if request.path.rstrip('/').endswith('/%s' % exception):
+                if request.path.rstrip('/').endswith(f'/{exception}'):
                     raise
         c.show_login_overlay = True
 
@@ -1230,9 +1215,13 @@ def auditlog_user(message, *args, **kwargs):
     """
     from allura import model as M
     ip_address = utils.ip_address(request)
-    message = 'IP Address: {}\nUser-Agent: {}\n'.format(ip_address, request.user_agent) + message
+    message = (
+        f'IP Address: {ip_address}\nUser-Agent: {request.user_agent}\n'
+        + message
+    )
+
     if c.user and kwargs.get('user') and kwargs['user'] != c.user:
-        message = 'Done by user: {}\n'.format(c.user.username) + message
+        message = f'Done by user: {c.user.username}\n' + message
     return M.AuditLog.log_user(message, *args, **kwargs)
 
 
@@ -1249,7 +1238,7 @@ def get_user_status(user):
         return 'enabled'
     elif disabled:
         return 'disabled'
-    elif pending:
+    else:
         return 'pending'
 
 
@@ -1286,7 +1275,7 @@ def base64uri(content_or_image, image_format='PNG', mimetype='image/png', window
         content = content.replace('\n', '\r\n')
 
     data = six.ensure_text(base64.b64encode(six.ensure_binary(content)))
-    return 'data:{};base64,{}'.format(mimetype, data)
+    return f'data:{mimetype};base64,{data}'
 
 
 def slugify(name, allow_periods=False):
@@ -1304,14 +1293,13 @@ email_re = re.compile(r'(([a-z0-9_]|\-|\.)+)@([\w\.-]+)', re.IGNORECASE)
 
 
 def hide_private_info(message):
-    if asbool(tg.config.get('hide_private_info', 'true')) and message:
-        hidden = email_re.sub(r'\1@...', message)
-        if type(message) not in six.string_types:
-            # custom subclass like markupsafe.Markup, convert to that type again
-            hidden = type(message)(hidden)
-        return hidden
-    else:
+    if not asbool(tg.config.get('hide_private_info', 'true')) or not message:
         return message
+    hidden = email_re.sub(r'\1@...', message)
+    if type(message) not in six.string_types:
+        # custom subclass like markupsafe.Markup, convert to that type again
+        hidden = type(message)(hidden)
+    return hidden
 
 
 def emojize(text):

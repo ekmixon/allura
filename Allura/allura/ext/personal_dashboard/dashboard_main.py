@@ -92,15 +92,10 @@ class TicketsSection(DashboardSectionBase):
         return dict(tickets=tickets, count=result.get('count'), solr_error=result.get('solr_error'))
 
     def prepare_context(self, context):
-        page = 0
-        limit = 25
-
         page_string = context['c'].form_values.get('page')
         limit_string = context['c'].form_values.get('limit')
-        if page_string is not None:
-            page = int(page_string)
-        if limit_string is not None:
-            limit = int(limit_string)
+        page = int(page_string) if page_string is not None else 0
+        limit = int(limit_string) if limit_string is not None else 25
         result = self.query_tickets(page, limit)
         context['page_size'] = ffw.PageSize()
         context['page_list'] = ffw.PageList()
@@ -116,9 +111,7 @@ class MergeRequestsSection(DashboardSectionBase):
     template = 'allura.ext.personal_dashboard:templates/sections/merge_requests.html'
 
     def get_merge_requests(self):
-        return [
-            merge_request
-            for merge_request in self.user.my_merge_requests()]
+        return list(self.user.my_merge_requests())
 
     def prepare_context(self, context):
         context['requests'] = self.get_merge_requests()

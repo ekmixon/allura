@@ -40,8 +40,7 @@ class SearchResults(ew_core.Widget):
 
     def resources(self):
         for f in self.fields:
-            for r in f.resources():
-                yield r
+            yield from f.resources()
         yield ew.CSSLink('css/search.css')
 
 

@@ -40,8 +40,7 @@ def id(email):
     The result may be saved for use in later calls to gravatar.url().
 
     """
-    match = _wrapped_email.match(email)
-    if match:
+    if match := _wrapped_email.match(email):
         email = match.group(1)
     return hashlib.md5(email.strip().lower().encode('utf8')).hexdigest()
 
@@ -90,7 +89,7 @@ def url(email=None, gravatar_id=None, **kw):
         kw['r'] = 'pg'
     if 'd' not in kw and config.get('default_avatar_image'):
         kw['d'] = h.absurl(config['default_avatar_image'])
-    return ('https://secure.gravatar.com/avatar/%s?%s' % (gravatar_id, six.moves.urllib.parse.urlencode(kw)))
+    return f'https://secure.gravatar.com/avatar/{gravatar_id}?{six.moves.urllib.parse.urlencode(kw)}'
 
 
 def for_user(user):

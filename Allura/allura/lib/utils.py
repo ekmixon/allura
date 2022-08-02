@@ -82,10 +82,7 @@ def guess_mime_type(filename):
     '''
     # Consider changing to strict=False
     content_type = mimetypes.guess_type(filename, strict=True)
-    if content_type[0]:
-        content_type = content_type[0]
-    else:
-        content_type = 'application/octet-stream'
+    content_type = content_type[0] or 'application/octet-stream'
     return content_type
 
 
@@ -202,8 +199,8 @@ class AntiSpam(object):
         self.num_honey = num_honey
         if request is None or request.method == 'GET':
             self.request = tg.request
-            self.timestamp = timestamp if timestamp else int(time.time())
-            self.spinner = spinner if spinner else self.make_spinner()
+            self.timestamp = timestamp or int(time.time())
+            self.spinner = spinner or self.make_spinner()
             self.timestamp_text = str(self.timestamp)
             self.spinner_text = six.ensure_text(self._wrap(self.spinner))
         else:
@@ -214,7 +211,7 @@ class AntiSpam(object):
             self.spinner = self._unwrap(self.spinner_text)
         trans_fn = ord if six.PY2 else int
         self.spinner_ord = list(map(trans_fn, self.spinner))
-        self.random_padding = [random.randint(0, 255) for x in self.spinner]
+        self.random_padding = [random.randint(0, 255) for _ in self.spinner]
         self.honey_class = self.enc(self.spinner_text, css_safe=True)
 
         # The counter is to ensure that multiple forms in the same page
@@ -307,7 +304,7 @@ class AntiSpam(object):
             # this is primarily for tests that sometimes don't have a remote_addr set on the request
             self.client_ip = '127.0.0.1'
         octets = self.client_ip.split('.')
-        ip_chunk = '.'.join(octets[0:3])
+        ip_chunk = '.'.join(octets[:3])
         plain = '%d:%s:%s' % (
             timestamp, ip_chunk, tg.config.get('spinner_secret', 'abcdef'))
         return hashlib.sha1(six.ensure_binary(plain)).digest()
@@ -319,7 +316,7 @@ class AntiSpam(object):
         if params is None:
             params = request.params
         new_params = dict(params)
-        if not request.method == 'GET':
+        if request.method != 'GET':
             obj = None
             try:
                 new_params.pop('timestamp', None)
@@ -342,14 +339,14 @@ class AntiSpam(object):
                         pass
                 for fldno in range(obj.num_honey):
                     try:
-                        value = new_params.pop('honey%s' % fldno)
+                        value = new_params.pop(f'honey{fldno}')
                     except KeyError:
-                        raise ValueError('Missing honeypot field: honey%s' % fldno)
+                        raise ValueError(f'Missing honeypot field: honey{fldno}')
                     if value:
-                        raise ValueError('Value in honeypot field: %s' % value)
+                        raise ValueError(f'Value in honeypot field: {value}')
             except Exception as ex:
                 attrs = dict(now=now, obj=vars(obj) if obj else None)
-                log.info('Form validation failure: {}'.format(attrs))
+                log.info(f'Form validation failure: {attrs}')
                 log.info('Error is', exc_info=ex)
                 raise
         return new_params
@@ -371,10 +368,10 @@ class AntiSpam(object):
                 if testing and not tg.request.environ.get('regular_antispam_err_handling_even_when_tests'):
                     # re-raise so we can see problems more easily
                     raise
-                else:
-                    # regular antispam failure handling
-                    tg.flash(error_msg, 'error')
-                    redirect(error_url or six.ensure_text(tg.request.referer or '.'))
+                # regular antispam failure handling
+                tg.flash(error_msg, 'error')
+                redirect(error_url or six.ensure_text(tg.request.referer or '.'))
+
         return before_validate(antispam_hook)
 
 
@@ -408,7 +405,7 @@ class TransformedDict(collections.MutableMapping):
     """
 
     def __init__(self, *args, **kwargs):
-        self.store = dict()
+        self.store = {}
         self.update(dict(*args, **kwargs))  # use the free update to set keys
 
     def __getitem__(self, key):
@@ -480,30 +477,27 @@ class LineAnchorCodeHtmlFormatter(HtmlFormatter):
 def generate_code_stats(blob):
     from allura.lib import helpers as h
 
-    stats = {'line_count': 0,
-             'code_size': 0,
-             'data_line_count': 0}
     code = h.really_unicode(blob.text)
     lines = code.split('\n')
-    stats['code_size'] = blob.size
-    stats['line_count'] = len(lines)
+    stats = {
+        'data_line_count': 0,
+        'code_size': blob.size,
+        'line_count': len(lines),
+    }
+
     spaces = re.compile(r'^\s*$')
-    stats['data_line_count'] = sum([1 for l in lines if not spaces.match(l)])
+    stats['data_line_count'] = sum(not spaces.match(l) for l in lines)
     return stats
 
 
 def is_text_file(file):
     msg = magic.from_buffer(file[:1024])
-    if ("text" in msg) or ("empty" in msg):
-        return True
-    return False
+    return "text" in msg or "empty" in msg
 
 
 def take_while_true(source):
-    x = source()
-    while x:
+    while x := source():
         yield x
-        x = source()
 
 
 def serve_file(fp, filename, content_type, last_modified=None,
@@ -513,7 +507,7 @@ def serve_file(fp, filename, content_type, last_modified=None,
         etag = '{0}?{1}'.format(filename, last_modified).encode('utf-8')
     if etag:
         etag_cache(etag)
-    tg.response.headers['Content-Type'] = str('')
+    tg.response.headers['Content-Type'] = ''
     tg.response.content_type = str(content_type)
     tg.response.cache_expires = cache_expires or asint(
         tg.config.get('files_expires_header_secs', 60 * 60))
@@ -527,8 +521,10 @@ def serve_file(fp, filename, content_type, last_modified=None,
     if not embed:
         from allura.lib import helpers as h
         tg.response.headers.add(
-            str('Content-Disposition'),
-            str('attachment;filename="%s"' % h.urlquote(filename)))
+            'Content-Disposition',
+            str('attachment;filename="%s"' % h.urlquote(filename)),
+        )
+
     # http://code.google.com/p/modwsgi/wiki/FileWrapperExtension
     block_size = 4096
     if 'wsgi.file_wrapper' in tg.request.environ:
@@ -560,9 +556,7 @@ class ForgeHTMLSanitizerFilter(html5lib.filters.sanitizer.Filter):
                           (ns_html, 'select'),
                           (ns_html, 'textarea'),
                           }
-        _extra_allowed_elements = set([
-            (ns_html, 'summary'),
-        ])
+        _extra_allowed_elements = {(ns_html, 'summary')}
         self.allowed_elements = (set(html5lib.filters.sanitizer.allowed_elements) | _extra_allowed_elements) - _form_elements
 
         # srcset is used in our own project_list/project_summary widgets
@@ -710,18 +704,16 @@ def unique_attachments(attachments):
     max :class:`bson.ObjectId`) will make it to the resulting list."""
     if not attachments:
         return []
-    result = []
     # list passed to groupby should be sorted in order to avoid group key repetition
     attachments = sorted(attachments, key=op.attrgetter('filename'))
-    for _, atts in groupby(attachments, op.attrgetter('filename')):
-        result.append(max(atts, key=op.attrgetter('_id')))
-    return result
+    return [
+        max(atts, key=op.attrgetter('_id'))
+        for _, atts in groupby(attachments, op.attrgetter('filename'))
+    ]
 
 
 def is_ajax(request):
-    if request.headers.get('X-Requested-With', None) == 'XMLHttpRequest':
-        return True
-    return False
+    return request.headers.get('X-Requested-With', None) == 'XMLHttpRequest'
 
 
 class JSONForExport(tg.jsonify.JSONEncoder):
@@ -764,20 +756,17 @@ def get_reactions_json():
 
 def get_usernames_from_md(text):
     """ Returns a unique usernames set from a text """
-    usernames = set()
     html_text = g.markdown.convert(text)
     soup = BeautifulSoup(html_text, 'html.parser')
-    for mention in soup.select('a.user-mention'):
-        usernames.add(mention.get_text().replace('@', ''))
-    return usernames
+    return {
+        mention.get_text().replace('@', '')
+        for mention in soup.select('a.user-mention')
+    }
 
 
 def get_key_from_value(d, val):
     """ Get key from given value. return empty str if not exists """
-    for k, v in d.items():
-        if val in v:
-            return k
-    return ''
+    return next((k for k, v in d.items() if val in v), '')
 
 
 def is_nofollow_url(url):
@@ -811,11 +800,11 @@ def urlencode(params):
     unicode strings. The parameters are first case to UTF-8 encoded strings and
     then encoded as per normal.
     """
-    return six.moves.urllib.parse.urlencode([i for i in generate_smart_str(params)])
+    return six.moves.urllib.parse.urlencode(list(generate_smart_str(params)))
 
 
 def close_ipv4_addrs(ip1, ip2):
-    return ip1.split('.')[0:3] == ip2.split('.')[0:3]
+    return ip1.split('.')[:3] == ip2.split('.')[:3]
 
 
 @contextmanager

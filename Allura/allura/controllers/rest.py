@@ -57,10 +57,7 @@ class RestController(object):
         headers_auth = 'Authorization' in request.headers
         params_auth = 'oauth_token' in request.params
         params_auth = params_auth or 'access_token' in request.params
-        if headers_auth or params_auth:
-            return self.oauth._authenticate()
-        else:
-            return None
+        return self.oauth._authenticate() if headers_auth or params_auth else None
 
     @expose('json:')
     def index(self, **kw):
@@ -85,11 +82,11 @@ class RestController(object):
                 }
             }
         """
-        summary = dict()
-        stats = dict()
-        for stat, provider in six.iteritems(g.entry_points['site_stats']):
-            stats[stat] = provider()
-        if stats:
+        summary = {}
+        if stats := {
+            stat: provider()
+            for stat, provider in six.iteritems(g.entry_points['site_stats'])
+        }:
             summary['site_stats'] = stats
         return summary
 
@@ -97,13 +94,12 @@ class RestController(object):
     def notification(self, cookie='', url='', tool_name='', **kw):
         c.api_token = self._authenticate_request()
         user = c.api_token.user if c.api_token else c.user
-        r = g.theme._get_site_notification(
+        if r := g.theme._get_site_notification(
             url=url,
             user=user,
             tool_name=tool_name,
-            site_notification_cookie_value=cookie
-        )
-        if r:
+            site_notification_cookie_value=cookie,
+        ):
             return dict(notification=r[0], cookie=r[1])
         return {}
 
@@ -112,10 +108,10 @@ class RestController(object):
         c.api_token = self._authenticate_request()
         if c.api_token:
             c.user = c.api_token.user
-        neighborhood = M.Neighborhood.query.get(url_prefix='/' + name + '/')
-        if not neighborhood:
+        if neighborhood := M.Neighborhood.query.get(url_prefix=f'/{name}/'):
+            return NeighborhoodRestController(neighborhood), remainder
+        else:
             raise exc.HTTPNotFound(name)
-        return NeighborhoodRestController(neighborhood), remainder
 
 
 class OAuthNegotiator(object):
@@ -145,7 +141,10 @@ class OAuthNegotiator(object):
                         request.environ.get('HTTP_X_FORWARDED_PROTO') == 'https',
                         debug)):
                 request.environ['tg.status_code_redirect'] = True
-                raise exc.HTTPUnauthorized('HTTPS is required to use bearer tokens %s' % request.environ)
+                raise exc.HTTPUnauthorized(
+                    f'HTTPS is required to use bearer tokens {request.environ}'
+                )
+
             access_token = M.OAuthAccessToken.query.get(api_key=access_token)
             if not (access_token and access_token.is_bearer):
                 request.environ['tg.status_code_redirect'] = True
@@ -226,18 +225,14 @@ class OAuthNegotiator(object):
         rtok = M.OAuthRequestToken.query.get(api_key=oauth_token)
         if no:
             rtok.delete()
-            flash('%s NOT AUTHORIZED' % rtok.consumer_token.name, 'error')
+            flash(f'{rtok.consumer_token.name} NOT AUTHORIZED', 'error')
             redirect('/auth/oauth/')
         if rtok.callback == 'oob':
             rtok.validation_pin = h.nonce(6)
             return dict(rtok=rtok)
         rtok.validation_pin = h.nonce(20)
-        if '?' in rtok.callback:
-            url = rtok.callback + '&'
-        else:
-            url = rtok.callback + '?'
-        url += 'oauth_token=%s&oauth_verifier=%s' % (
-            rtok.api_key, rtok.validation_pin)
+        url = f'{rtok.callback}&' if '?' in rtok.callback else f'{rtok.callback}?'
+        url += f'oauth_token={rtok.api_key}&oauth_verifier={rtok.validation_pin}'
         redirect(url)
 
     @expose()
@@ -285,8 +280,7 @@ def rest_has_access(obj, user, perm):
     """
     security.require_access(obj, 'admin')
     resp = {'result': False}
-    user = M.User.by_username(user)
-    if user:
+    if user := M.User.by_username(user):
         resp['result'] = security.has_access(obj, perm, user=user)()
     return resp
 
@@ -328,9 +322,9 @@ def nbhd_lookup_first_path(nbhd, name, current_user, remainder, api=False):
     else:
         project = M.Project.query.get(shortname=prefix + pname, neighborhood_id=nbhd._id)
     if project is None and prefix == 'u/':
-        # create user-project if it is missing
-        user = M.User.query.get(username=pname, disabled=False, pending=False)
-        if user:
+        if user := M.User.query.get(
+            username=pname, disabled=False, pending=False
+        ):
             project = user.private_project()
     if project is None:
         # look for neighborhood tools matching the URL
@@ -344,13 +338,13 @@ def nbhd_lookup_first_path(nbhd, name, current_user, remainder, api=False):
             raise exc.HTTPNotFound
         if user.disabled and not is_site_admin:
             raise exc.HTTPNotFound
-        if not api and user.url() != '/{}{}/'.format(prefix, pname):
+        if not api and user.url() != f'/{prefix}{pname}/':
             # might be different URL than the URL requested
             # e.g. if username isn't valid project name and user_project_shortname() converts the name
             new_url = user.url()
             new_url += '/'.join(remainder)
             if request.query_string:
-                new_url += '?' + request.query_string
+                new_url += f'?{request.query_string}'
             redirect(new_url)
     if project.database_configured is False:
         if remainder == ('user_icon',):
@@ -411,11 +405,11 @@ class NeighborhoodRestController(object):
 
         project = create_project_with_attrs(pdata, self._neighborhood)
         response.status_int = 201
-        response.location = str(h.absurl('/rest' + project.url()))
+        response.location = str(h.absurl(f'/rest{project.url()}'))
         return {
             "status": "success",
             "html_url": h.absurl(project.url()),
-            "url": h.absurl('/rest' + project.url()),
+            "url": h.absurl(f'/rest{project.url()}'),
         }
 
 
@@ -425,11 +419,11 @@ class ProjectRestController(object):
     def _lookup(self, name, *remainder):
         if not name:
             return self, ()
-        subproject = M.Project.query.get(
-            shortname=c.project.shortname + '/' + name,
+        if subproject := M.Project.query.get(
+            shortname=f'{c.project.shortname}/{name}',
             neighborhood_id=c.project.neighborhood_id,
-            deleted=False)
-        if subproject:
+            deleted=False,
+        ):
             c.project = subproject
             c.app = None
             return ProjectRestController(), remainder
@@ -444,8 +438,8 @@ class ProjectRestController(object):
     @expose('json:')
     def index(self, **kw):
         if 'doap' in kw:
-            response.headers['Content-Type'] = str('')
-            response.content_type = str('application/rdf+xml')
+            response.headers['Content-Type'] = ''
+            response.content_type = 'application/rdf+xml'
             return b'<?xml version="1.0" encoding="UTF-8" ?>' + c.project.doap()
         return c.project.__json__()
 

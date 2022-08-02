@@ -139,13 +139,12 @@ class AuthController(BaseController):
             return_to = kwargs.pop('return_to')
         elif orig_request:
             return_to = orig_request.url
+        elif request.referer is not None and six.ensure_text(request.referer).split('/')[-1] == 'neighborhood':
+            return_to = '/'
+        elif request.referer:
+            return_to = six.ensure_text(request.referer)
         else:
-            if request.referer is not None and six.ensure_text(request.referer).split('/')[-1] == 'neighborhood':
-                return_to = '/'
-            elif request.referer:
-                return_to = six.ensure_text(request.referer)
-            else:
-                return_to = None
+            return_to = None
         c.form = F.login_form
         return dict(return_to=return_to)
 
@@ -158,7 +157,7 @@ class AuthController(BaseController):
         if not asbool(config.get('auth.allow_user_registration', True)):
             raise wexc.HTTPNotFound()
         c.form = F.registration_form
-        return dict()
+        return {}
 
     def _validate_hash(self, hash):
         login_url = config.get('auth.login_url', '/auth/')
@@ -167,13 +166,13 @@ class AuthController(BaseController):
         user_record = M.User.query.find(
             {'tool_data.AuthPasswordReset.hash': hash}).first()
         if not user_record:
-            log.info('Reset hash not found: {}'.format(hash))
+            log.info(f'Reset hash not found: {hash}')
             flash('Unable to process reset, please try again')
             redirect(login_url)
         hash_expiry = user_record.get_tool_data(
             'AuthPasswordReset', 'hash_expiry')
         if not hash_expiry or hash_expiry < datetime.utcnow():
-            log.info('Reset hash expired: {} {}'.format(hash, hash_expiry))
+            log.info(f'Reset hash expired: {hash} {hash_expiry}')
             flash('Unable to process reset, please try again')
             redirect(login_url)
         return user_record
@@ -199,7 +198,7 @@ class AuthController(BaseController):
         if not provider.forgotten_password_process:
             raise wexc.HTTPNotFound()
         user = self._validate_hash(hash)
-        enforce_hibp_password_check(provider, pw, '/auth/forgotten_password/{}'.format(hash))
+        enforce_hibp_password_check(provider, pw, f'/auth/forgotten_password/{hash}')
 
         user.set_password(pw)
         user.set_tool_data('AuthPasswordReset', hash='', hash_expiry='')  # Clear password reset token
@@ -271,8 +270,7 @@ class AuthController(BaseController):
         user.set_tool_data('allura', pwd_reset_preserve_session=session.id)
         # else the first password set causes this session to be invalidated
         if require_email:
-            em = user.claim_address(email)
-            if em:
+            if em := user.claim_address(email):
                 em.send_verification_link()
             flash('User "%s" registered. Verification link was sent to your email.' % username)
         else:
@@ -356,10 +354,7 @@ class AuthController(BaseController):
             return_to = '/'
         rt_host = urlparse(urljoin(config['base_url'], return_to)).netloc
         base_host = urlparse(config['base_url']).netloc
-        if rt_host == base_host:
-            return return_to
-        else:
-            return '/'
+        return return_to if rt_host == base_host else '/'
 
     @expose()
     @require_post()
@@ -424,7 +419,7 @@ class AuthController(BaseController):
             return_to = self._verify_return_to(kwargs.get('return_to'))
             redirect(return_to)
 
-    @expose(content_type=str('text/plain'))
+    @expose(content_type='text/plain')
     def refresh_repo(self, *repo_path):
         # post-commit hooks use this
         if not repo_path:
@@ -432,20 +427,20 @@ class AuthController(BaseController):
         repo_path = '/' + '/'.join(repo_path)
         project, rest = h.find_project(repo_path)
         if project is None:
-            return 'No project at %s' % repo_path
+            return f'No project at {repo_path}'
         if not rest:
-            return '%s does not include a repo mount point' % repo_path
+            return f'{repo_path} does not include a repo mount point'
         h.set_context(project.shortname,
                       rest[0], neighborhood=project.neighborhood)
         if c.app is None or not getattr(c.app, 'repo', None):
-            return 'Cannot find repo at %s' % repo_path
+            return f'Cannot find repo at {repo_path}'
         allura.tasks.repo_tasks.refresh.post()
         return '%r refresh queued.\n' % c.app.repo
 
     def _auth_repos(self, user):
         def _unix_group_name(neighborhood, shortname):
             path = neighborhood.url_prefix + \
-                shortname[len(neighborhood.shortname_prefix):]
+                    shortname[len(neighborhood.shortname_prefix):]
             parts = [p for p in path.split('/') if p]
             if len(parts) == 2 and parts[0] == 'p':
                 parts = parts[1:]
@@ -459,10 +454,10 @@ class AuthController(BaseController):
                         continue
                     if not has_access(app, 'write', user, p):
                         continue
-                    repos.append('/%s/%s/%s' % (
-                        app.tool_name.lower(),
-                        _unix_group_name(p.neighborhood, p.shortname),
-                        app.options['mount_point']))
+                    repos.append(
+                        f"/{app.tool_name.lower()}/{_unix_group_name(p.neighborhood, p.shortname)}/{app.options['mount_point']}"
+                    )
+
         repos.sort()
         return repos
 
@@ -549,7 +544,7 @@ class AuthController(BaseController):
         expired_reason = session.pop('expired-reason', None)
 
         session.save()
-        h.auditlog_user('Password reset ({})'.format(expired_reason))
+        h.auditlog_user(f'Password reset ({expired_reason})')
         if return_to and return_to != request.url:
             redirect(return_to)
         else:
@@ -594,7 +589,7 @@ class PreferencesController(BaseController):
                     return
                 if primary_addr == user.email_addresses[i]:
                     if select_new_primary_addr(user, ignore_emails=primary_addr) is None \
-                            and asbool(config.get('auth.require_email_addr', False)):
+                                and asbool(config.get('auth.require_email_addr', False)):
                         flash('You must have at least one verified email address.', 'error')
                         return
                     else:
@@ -617,7 +612,11 @@ class PreferencesController(BaseController):
             user.set_tool_data('AuthPasswordReset', hash='', hash_expiry='')  # Clear password reset token
             claimed_emails_limit = config.get('user_prefs.maximum_claimed_emails', None)
             if claimed_emails_limit and len(user.email_addresses) >= int(claimed_emails_limit):
-                flash('You cannot claim more than %s email addresses.' % claimed_emails_limit, 'error')
+                flash(
+                    f'You cannot claim more than {claimed_emails_limit} email addresses.',
+                    'error',
+                )
+
                 return
             if not admin and (not kw.get('password') or not provider.validate_password(user, kw.get('password'))):
                 flash('You must provide your current password to claim new email', 'error')
@@ -629,29 +628,28 @@ class PreferencesController(BaseController):
                 flash('Email address already claimed', 'error')
 
             elif mail_util.isvalid(new_addr['addr']):
-                em = M.EmailAddress.create(new_addr['addr'])
-                if em:
+                if em := M.EmailAddress.create(new_addr['addr']):
                     user.email_addresses.append(em.email)
                     em.claimed_by_user_id = user._id
 
-                    confirmed_emails = [email for email in claimed_emails if email.confirmed]
-                    if not confirmed_emails:
-                        if not admin:
-                            em.send_verification_link()
-                        else:
-                            AuthController()._verify_addr(em, do_auth_check=False)
-                    else:
+                    if confirmed_emails := [
+                        email for email in claimed_emails if email.confirmed
+                    ]:
                         em.send_claim_attempt()
 
+                    elif admin:
+                        AuthController()._verify_addr(em, do_auth_check=False)
+                    else:
+                        em.send_verification_link()
                     if not admin:
                         user.set_tool_data('AuthPasswordReset', hash='', hash_expiry='')
                         flash('A verification email has been sent.  Please check your email and click to confirm.')
 
                     h.auditlog_user('New email address: %s', new_addr['addr'], user=user)
                 else:
-                    flash('Email address %s is invalid' % new_addr['addr'], 'error')
+                    flash(f"Email address {new_addr['addr']} is invalid", 'error')
             else:
-                flash('Email address %s is invalid' % new_addr['addr'], 'error')
+                flash(f"Email address {new_addr['addr']} is invalid", 'error')
         if not primary_addr and not user.get_pref('email_address') and user.email_addresses:
             primary_addr = select_new_primary_addr(user)
         if primary_addr:
@@ -734,7 +732,7 @@ class PreferencesController(BaseController):
         try:
             ap.upload_sshkey(c.user.username, key)
         except AssertionError as ae:
-            flash('Error uploading key: %s' % ae, 'error')
+            flash(f'Error uploading key: {ae}', 'error')
         flash('Key uploaded')
         redirect('.')
 
@@ -946,10 +944,10 @@ class UserSkillsController(BaseController):
 
     @expose()
     def _lookup(self, trove_cat_id, *remainder):
-        cat = M.TroveCategory.query.get(trove_cat_id=int(trove_cat_id))
-        if not cat:
+        if cat := M.TroveCategory.query.get(trove_cat_id=int(trove_cat_id)):
+            return UserSkillsController(category=cat), remainder
+        else:
             raise wexc.HTTPNotFound
-        return UserSkillsController(category=cat), remainder
 
     @with_trailing_slash
     @expose('jinja:allura:templates/user_skills.html')
@@ -1033,7 +1031,7 @@ class UserContactsController(BaseController):
         require_authenticated()
 
         if kw['socialnetwork'] == 'Twitter' and not kw['accounturl'].startswith('http'):
-            kw['accounturl'] = 'http://twitter.com/%s' % kw['accounturl'].replace('@', '')
+            kw['accounturl'] = f"http://twitter.com/{kw['accounturl'].replace('@', '')}"
 
         c.user.add_multivalue_pref('socialnetworks',
                                    {'socialnetwork': kw['socialnetwork'], 'accounturl': kw['accounturl']})
@@ -1171,17 +1169,25 @@ class SubscriptionsController(BaseController):
         subscriptions = []
         mailboxes = list(M.Mailbox.query.find(
             dict(user_id=c.user._id, is_flash=False)))
-        projects = dict(
-            (p._id, p) for p in M.Project.query.find(dict(
-                _id={'$in': [mb.project_id for mb in mailboxes]})))
-        app_index = dict(
-            (ac._id, ac) for ac in M.AppConfig.query.find(dict(
-                _id={'$in': [mb.app_config_id for mb in mailboxes]})))
+        projects = {
+            p._id: p
+            for p in M.Project.query.find(
+                dict(_id={'$in': [mb.project_id for mb in mailboxes]})
+            )
+        }
+
+        app_index = {
+            ac._id: ac
+            for ac in M.AppConfig.query.find(
+                dict(_id={'$in': [mb.app_config_id for mb in mailboxes]})
+            )
+        }
+
 
         # Add the tools that are already subscribed to by the user.
         for mb in mailboxes:
-            project = projects.get(mb.project_id, None)
-            app_config = app_index.get(mb.app_config_id, None)
+            project = projects.get(mb.project_id)
+            app_config = app_index.get(mb.app_config_id)
             if project is None:
                 mb.query.delete()
                 continue
@@ -1207,19 +1213,25 @@ class SubscriptionsController(BaseController):
                 subscribed=True))
 
         # Dictionary of all projects projects accessible based on a users credentials (user_roles).
-        my_projects = dict((p._id, p) for p in c.user.my_projects())
+        my_projects = {p._id: p for p in c.user.my_projects()}
 
         # Dictionary containing all tools (subscribed and un-subscribed).
         my_tools = M.AppConfig.query.find(dict(
             project_id={'$in': list(my_projects.keys())}))
 
         # Dictionary containing all the currently subscribed tools for a given user.
-        my_tools_subscriptions = dict(
-            (mb.app_config_id, mb) for mb in M.Mailbox.query.find(dict(
-                user_id=c.user._id,
-                project_id={'$in': list(projects.keys())},
-                app_config_id={'$in': list(app_index.keys())},
-                artifact_index_id=None)))
+        my_tools_subscriptions = {
+            mb.app_config_id: mb
+            for mb in M.Mailbox.query.find(
+                dict(
+                    user_id=c.user._id,
+                    project_id={'$in': list(projects.keys())},
+                    app_config_id={'$in': list(app_index.keys())},
+                    artifact_index_id=None,
+                )
+            )
+        }
+
 
         # Add the remaining tools that are eligible for subscription.
         for tool in my_tools:
@@ -1259,9 +1271,8 @@ class SubscriptionsController(BaseController):
                     M.Mailbox.subscribe(
                         project_id=bson.ObjectId(s['project_id']),
                         app_config_id=bson.ObjectId(s['tool_id']))
-            else:
-                if s['subscription_id'] is not None:
-                    s['subscription_id'].delete()
+            elif s['subscription_id'] is not None:
+                s['subscription_id'].delete()
         if email_format:
             c.user.set_pref('email_format', email_format)
 

@@ -65,9 +65,9 @@ class NeighborhoodProjectShortNameValidator(fev.FancyValidator):
                 shortname, state)
 
     def _validate_allowed(self, shortname, neighborhood, state):
-        p = M.Project.query.get(
-            shortname=shortname, neighborhood_id=neighborhood._id)
-        if p:
+        if p := M.Project.query.get(
+            shortname=shortname, neighborhood_id=neighborhood._id
+        ):
             raise forge_exc.ProjectConflict(
                 'This project name is taken.',
                 shortname, state)
@@ -297,11 +297,7 @@ class PersonalDataForm(ForgeForm):
         timezone_field = [x for x in self._fields if x.name == 'timezone'][0]
 
         for opt in sex_field.options:
-            if opt.label == user.sex:
-                opt.selected = True
-            else:
-                opt.selected = False
-
+            opt.selected = opt.label == user.sex
         if birthdate_field:
             if user.get_pref('birthdate'):
                 birthdate_field[0].attrs['value'] = user.get_pref('birthdate').strftime('%d/%m/%Y')
@@ -316,11 +312,7 @@ class PersonalDataForm(ForgeForm):
             else:
                 opt.selected = False
 
-        if user.localization.city:
-            city_field.attrs['value'] = user.localization.city
-        else:
-            city_field.attrs['value'] = ''
-
+        city_field.attrs['value'] = user.localization.city or ''
         for opt in timezone_field.options:
             if opt.label == user.timezone:
                 opt.selected = True
@@ -470,18 +462,23 @@ class RemoveSocialNetworkForm(ForgeForm):
                 show_errors=False,
                 fields=[
                     ffw.DisplayOnlyField(
-                        text='%s account' % socialnetwork,
+                        text=f'{socialnetwork} account',
                         name="socialnetwork",
                         attrs={'value': socialnetwork},
-                        show_errors=False),
+                        show_errors=False,
+                    ),
                     ffw.DisplayOnlyField(
-                        name="account",
-                        attrs={'value': account},
-                        show_errors=False),
+                        name="account", attrs={'value': account}, show_errors=False
+                    ),
                     ew.SubmitButton(
                         show_label=False,
                         attrs={'value': 'Remove'},
-                        show_errors=False)])]
+                        show_errors=False,
+                    ),
+                ],
+            )
+        ]
+
         return super(ForgeForm, self).display(**kw)
 
     @ew_core.core.validator
@@ -564,7 +561,7 @@ class AddTimeSlotForm(ForgeForm):
     def to_python(self, kw, state):
         d = super(AddTimeSlotForm, self).to_python(kw, state)
         if (d['starttime']['h'], d['starttime']['m']) > \
-           (d['endtime']['h'], d['endtime']['m']):
+               (d['endtime']['h'], d['endtime']['m']):
                 raise formencode.Invalid(
                     'Invalid period: start time greater than end time.',
                     kw, state)
@@ -622,18 +619,22 @@ class RemoveTroveCategoryForm(ForgeForm):
                 show_label=False,
                 fields=[
                     ew.LinkField(
-                        text=cat.fullname,
-                        href="/categories/%s" % cat.trove_cat_id),
+                        text=cat.fullname, href=f"/categories/{cat.trove_cat_id}"
+                    ),
                     ew.HTMLField(
                         text=cat.shortname,
-                        attrs={'disabled':True, 'value':cat.shortname}),
-                    ew.SubmitButton(
-                        show_errors=False,
-                        attrs={'value': 'Remove'})],
+                        attrs={'disabled': True, 'value': cat.shortname},
+                    ),
+                    ew.SubmitButton(show_errors=False, attrs={'value': 'Remove'}),
+                ],
                 hidden_fields=[
                     ew.HiddenField(
-                        name='categoryid',
-                        attrs={'value': cat.trove_cat_id})])]
+                        name='categoryid', attrs={'value': cat.trove_cat_id}
+                    )
+                ],
+            )
+        ]
+
         return super(ForgeForm, self).display(**kw)
 
     @ew_core.core.validator
@@ -858,35 +859,34 @@ class NeighborhoodOverviewForm(ForgeForm):
         return super(NeighborhoodOverviewForm, self).from_python(value, state)
 
     def display_field(self, field, ignore_errors=False):
-        if field.name == "css" and self.list_color_inputs:
-            display = '<table class="table_class">'
-            ctx = self.context_for(field)
-            for inp in self.color_inputs:
-                additional_inputs = inp.get('additional', '')
-                empty_val = False
-                if inp['value'] is None or inp['value'] == '':
-                    empty_val = True
-                display += '<tr><td class="left"><label>%(label)s</label></td>' \
+        if field.name != "css" or not self.list_color_inputs:
+            return super(NeighborhoodOverviewForm, self).display_field(field, ignore_errors)
+        display = '<table class="table_class">'
+        ctx = self.context_for(field)
+        for inp in self.color_inputs:
+            additional_inputs = inp.get('additional', '')
+            empty_val = False
+            if inp['value'] is None or inp['value'] == '':
+                empty_val = True
+            display += '<tr><td class="left"><label>%(label)s</label></td>' \
                            '<td><input type="checkbox" name="%(ctx_name)s-%(inp_name)s-def" %(def_checked)s>default</td>' \
                            '<td class="right"><div class="%(ctx_name)s-%(inp_name)s-inp"><table class="input_inner">' \
                            '<tr><td><input type="text" class="%(inp_type)s" name="%(ctx_name)s-%(inp_name)s" ' \
                            'value="%(inp_value)s"></td><td>%(inp_additional)s</td></tr></table></div></td></tr>\n' % {
-                               'ctx_name': ctx['name'],
-                               'inp_name': inp['name'],
-                               'inp_value': inp['value'],
-                               'label': inp['label'],
-                               'inp_type': inp['type'],
-                               'def_checked': 'checked="checked"' if empty_val else '',
-                               'inp_additional': additional_inputs}
-            display += '</table>'
+                           'ctx_name': ctx['name'],
+                           'inp_name': inp['name'],
+                           'inp_value': inp['value'],
+                           'label': inp['label'],
+                           'inp_type': inp['type'],
+                           'def_checked': 'checked="checked"' if empty_val else '',
+                           'inp_additional': additional_inputs}
+        display += '</table>'
 
-            if ctx['errors'] and field.show_errors and not ignore_errors:
-                display = "%s<div class='error'>%s</div>" % (display,
-                                                             ctx['errors'])
+        if ctx['errors'] and field.show_errors and not ignore_errors:
+            display = "%s<div class='error'>%s</div>" % (display,
+                                                         ctx['errors'])
 
-            return Markup(display)
-        else:
-            return super(NeighborhoodOverviewForm, self).display_field(field, ignore_errors)
+        return Markup(display)
 
     @ew_core.core.validator
     def to_python(self, value, state):
@@ -895,15 +895,14 @@ class NeighborhoodOverviewForm(ForgeForm):
         if neighborhood and neighborhood.features['css'] == "picker":
             css_form_dict = {}
             for key in value.keys():
-                def_key = "%s-def" % (key)
+                def_key = f"{key}-def"
                 if key[:4] == "css-" and def_key not in value:
                     css_form_dict[key[4:]] = value[key]
             d['css'] = M.Neighborhood.compile_css_for_picker(css_form_dict)
         return d
 
     def resources(self):
-        for r in super(NeighborhoodOverviewForm, self).resources():
-            yield r
+        yield from super(NeighborhoodOverviewForm, self).resources()
         yield ew.CSSLink('css/colorPicker.css')
         yield ew.CSSLink('css/jqfontselector.css')
         yield ew.CSSScript('''
@@ -964,12 +963,14 @@ class NeighborhoodAddProjectForm(ForgeForm):
     @property
     def fields(self):
         provider = plugin.ProjectRegistrationProvider.get()
-        tools_options = []
-        for ep, tool in six.iteritems(g.entry_points["tool"]):
-            if tool.status == 'production' and tool._installable(tool_name=ep,
-                                                                 nbhd=c.project.neighborhood,
-                                                                 project_tools=[]):
-                tools_options.append(ew.Option(label=tool.tool_label, html_value=ep))
+        tools_options = [
+            ew.Option(label=tool.tool_label, html_value=ep)
+            for ep, tool in six.iteritems(g.entry_points["tool"])
+            if tool.status == 'production'
+            and tool._installable(
+                tool_name=ep, nbhd=c.project.neighborhood, project_tools=[]
+            )
+        ]
 
         return ew_core.NameList([
             ew.HiddenField(name='project_description', label='Public Description'),
@@ -1000,8 +1001,7 @@ class NeighborhoodAddProjectForm(ForgeForm):
         return value
 
     def resources(self):
-        for r in super(NeighborhoodAddProjectForm, self).resources():
-            yield r
+        yield from super(NeighborhoodAddProjectForm, self).resources()
         yield ew.CSSLink('css/add_project.css')
         neighborhood = g.antispam.enc('neighborhood')
         project_name = g.antispam.enc('project_name')

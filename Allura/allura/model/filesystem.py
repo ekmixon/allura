@@ -35,14 +35,15 @@ from io import open
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_BY_PIL = set([
+SUPPORTED_BY_PIL = {
     'image/jpg',
     'image/jpeg',
     'image/pjpeg',
     'image/png',
     'image/x-png',
     'image/gif',
-    'image/bmp'])
+    'image/bmp',
+}
 
 
 class File(MappedClass):
@@ -89,10 +90,10 @@ class File(MappedClass):
         obj = cls(filename=filename, **kw)
         with obj.wfile() as fp_w:
             while True:
-                s = stream.read()
-                if not s:
+                if s := stream.read():
+                    fp_w.write(s)
+                else:
                     break
-                fp_w.write(s)
         return obj
 
     @classmethod
@@ -177,7 +178,7 @@ class File(MappedClass):
                    convert_bmp=False):
         if content_type is None:
             content_type = utils.guess_mime_type(filename)
-        if not content_type.lower() in SUPPORTED_BY_PIL:
+        if content_type.lower() not in SUPPORTED_BY_PIL:
             log.debug('Content type %s from file %s not supported',
                       content_type, filename)
             return None, None
@@ -189,20 +190,16 @@ class File(MappedClass):
             return None, None
 
         format = image.format
-        save_anim = False
-
         if format == 'BMP' and convert_bmp: # use jpg format if bitmap is provided
             format = 'PNG'
             content_type = 'image/png'
             filename = re.sub('.bmp$', '.png', filename, flags=re.IGNORECASE)
 
-        if format == 'GIF':
-            save_anim = True # save all frames if GIF is provided
-        
         if save_original:
             original_meta = original_meta or {}
             original = cls(
                 filename=filename, content_type=content_type, **original_meta)
+            save_anim = format == 'GIF'
             with original.wfile() as fp_w:
                 try:
                     save_kwargs = {}

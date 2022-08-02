@@ -69,14 +69,18 @@ class SectionsUtil(object):
 
     @staticmethod
     def load_sections(app):
-        sections = {}
-        for ep in h.iter_entry_points('allura.%s.sections' % app):
-            sections[ep.name] = ep.load()
-        section_ordering = tg.config.get('%s_sections.order' % app, '')
-        ordered_sections = []
-        for section in re.split(r'\s*,\s*', section_ordering):
-            if section in sections:
-                ordered_sections.append(sections.pop(section))
+        sections = {
+            ep.name: ep.load()
+            for ep in h.iter_entry_points(f'allura.{app}.sections')
+        }
+
+        section_ordering = tg.config.get(f'{app}_sections.order', '')
+        ordered_sections = [
+            sections.pop(section)
+            for section in re.split(r'\s*,\s*', section_ordering)
+            if section in sections
+        ]
+
         sections = ordered_sections + list(sections.values())
         return sections
 

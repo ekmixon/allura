@@ -48,7 +48,7 @@ class BaseAttachment(File):
         return self.ArtifactType.query.get(_id=self.artifact_id)
 
     def url(self):
-        return self.artifact.url() + 'attachment/' + h.urlquote(self.filename)
+        return f'{self.artifact.url()}attachment/{h.urlquote(self.filename)}'
 
     def is_embedded(self):
         from tg import request
@@ -63,10 +63,14 @@ class BaseAttachment(File):
     @classmethod
     def save_attachment(cls, filename, fp, content_type=None, **kwargs):
         filename = h.really_unicode(filename)
-        thumbnail_meta = dict(type="thumbnail", app_config_id=c.app.config._id)
-        thumbnail_meta.update(kwargs)
-        original_meta = dict(type="attachment", app_config_id=c.app.config._id)
-        original_meta.update(kwargs)
+        thumbnail_meta = (
+            dict(type="thumbnail", app_config_id=c.app.config._id) | kwargs
+        )
+
+        original_meta = (
+            dict(type="attachment", app_config_id=c.app.config._id) | kwargs
+        )
+
         # Try to save as image, with thumbnail
         orig, thumbnail = cls.save_image(
             filename, fp,
@@ -77,11 +81,10 @@ class BaseAttachment(File):
             original_meta=original_meta)
         if orig is not None:
             return orig, thumbnail
-        else:
-            # No, generic attachment
-            # stream may have been partially consumed in a failed save_image
-            # attempt
-            fp.seek(0)
-            return cls.from_stream(
-                filename, fp, content_type=content_type,
-                **original_meta)
+        # No, generic attachment
+        # stream may have been partially consumed in a failed save_image
+        # attempt
+        fp.seek(0)
+        return cls.from_stream(
+            filename, fp, content_type=content_type,
+            **original_meta)

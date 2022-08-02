@@ -73,11 +73,13 @@ __all__ = ['make_app']
 
 
 def make_app(global_conf, full_stack=True, **app_conf):
-    override_root_module_name = app_conf.get('override_root', None)
-    if override_root_module_name:
+    if override_root_module_name := app_conf.get('override_root', None):
         # get an actual instance of it, like BasetestProjectRootController or TaskController
         className = override_root_module_name.title().replace('_', '') + 'Controller'
-        module = importlib.import_module('allura.controllers.{}'.format(override_root_module_name))
+        module = importlib.import_module(
+            f'allura.controllers.{override_root_module_name}'
+        )
+
         rootClass = getattr(module, className)
         root = rootClass()
     else:

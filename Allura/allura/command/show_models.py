@@ -97,7 +97,9 @@ class ReindexCommand(base.Command):
             q_project = dict(shortname={'$regex': self.options.project_regex})
         elif self.options.neighborhood:
             neighborhood_id = M.Neighborhood.query.get(
-                url_prefix='/%s/' % self.options.neighborhood)._id
+                url_prefix=f'/{self.options.neighborhood}/'
+            )._id
+
             q_project = dict(neighborhood_id=neighborhood_id)
         else:
             q_project = {}
@@ -112,7 +114,7 @@ class ReindexCommand(base.Command):
                 base.log.info('Reindex project %s', p.shortname)
                 # Clear index for this project
                 if self.options.solr and not self.options.skip_solr_delete:
-                    g.solr.delete(q='project_id_s:%s' % p._id)
+                    g.solr.delete(q=f'project_id_s:{p._id}')
                 if self.options.refs:
                     M.ArtifactReference.query.remove(
                         {'artifact_reference.project_id': p._id})
@@ -250,15 +252,10 @@ class EnsureIndexCommand(base.Command):
         base.log.info('Done updating indexes')
 
     def _update_indexes(self, collection, indexes):
-        uindexes = dict(
-            # convert list to tuple so it's hashable for 'set'
-            (tuple(i.index_spec), i)
-            for i in indexes
-            if i.unique)
-        indexes = dict(
-            (tuple(i.index_spec), i)
-            for i in indexes
-            if not i.unique)
+        uindexes = {tuple(i.index_spec): i for i in indexes if i.unique}
+
+        indexes = {tuple(i.index_spec): i for i in indexes if not i.unique}
+
         prev_indexes = {}
         prev_uindexes = {}
         unique_flag_drop = {}
@@ -277,11 +274,10 @@ class EnsureIndexCommand(base.Command):
                     unique_flag_drop[iname] = keys
                 else:
                     prev_uindexes[iname] = keys
+            elif keys in uindexes:
+                unique_flag_add[iname] = keys
             else:
-                if keys in uindexes:
-                    unique_flag_add[iname] = keys
-                else:
-                    prev_indexes[iname] = keys
+                prev_indexes[iname] = keys
 
         for iname, keys in six.iteritems(unique_flag_drop):
             self._recreate_index(collection, iname, list(keys), unique=False)
@@ -359,7 +355,7 @@ class EnsureIndexCommand(base.Command):
 
 
 def build_model_inheritance_graph():
-    graph = dict((m.mapped_class, ([], [])) for m in Mapper.all_mappers())
+    graph = {m.mapped_class: ([], []) for m in Mapper.all_mappers()}
     for cls, (parents, children) in six.iteritems(graph):
         for b in cls.__bases__:
             if b not in graph:
@@ -371,20 +367,19 @@ def build_model_inheritance_graph():
 
 def dump_cls(depth, cls):
     indent = ' ' * 4 * depth
-    yield indent + '%s.%s' % (cls.__module__, cls.__name__)
+    yield indent + f'{cls.__module__}.{cls.__name__}'
     m = mapper(cls)
     for p in m.properties:
         s = indent * 2 + ' - ' + str(p)
         if hasattr(p, 'field_type'):
-            s += ' (%s)' % p.field_type
+            s += f' ({p.field_type})'
         yield s
 
 
 def dfs(root, graph, depth=0):
     yield depth, root
     for node in graph[root][1]:
-        for r in dfs(node, graph, depth + 1):
-            yield r
+        yield from dfs(node, graph, depth + 1)
 
 
 def pm(etype, value, tb):  # pragma no cover

@@ -83,8 +83,7 @@ class SiteAdminController(object):
     def _lookup(self, name, *remainder):
         for ep_name in sorted(g.entry_points['site_admin'].keys()):
             admin_extension = g.entry_points['site_admin'][ep_name]
-            controller = admin_extension().controllers.get(name)
-            if controller:
+            if controller := admin_extension().controllers.get(name):
                 return controller(), remainder
         raise HTTPNotFound(name)
 
@@ -92,15 +91,44 @@ class SiteAdminController(object):
         base_url = '/nf/admin/'
         links = [
             SitemapEntry('Home', base_url, ui_icon=g.icons['admin']),
-            SitemapEntry('Add Subscribers', base_url + 'add_subscribers', ui_icon=g.icons['admin']),
-            SitemapEntry('New Projects', base_url + 'new_projects', ui_icon=g.icons['admin']),
-            SitemapEntry('Reclone Repo', base_url + 'reclone_repo', ui_icon=g.icons['admin']),
-            SitemapEntry('Task Manager', base_url + 'task_manager?state=busy', ui_icon=g.icons['stats']),
-            SitemapEntry('Search Projects', base_url + 'search_projects', ui_icon=g.icons['search']),
-            SitemapEntry('Delete Projects', base_url + 'delete_projects', ui_icon=g.icons['delete']),
-            SitemapEntry('Search Users', base_url + 'search_users', ui_icon=g.icons['search']),
-            SitemapEntry('Site Notifications', base_url + 'site_notifications', ui_icon=g.icons['admin']),
+            SitemapEntry(
+                'Add Subscribers',
+                f'{base_url}add_subscribers',
+                ui_icon=g.icons['admin'],
+            ),
+            SitemapEntry(
+                'New Projects', f'{base_url}new_projects', ui_icon=g.icons['admin']
+            ),
+            SitemapEntry(
+                'Reclone Repo', f'{base_url}reclone_repo', ui_icon=g.icons['admin']
+            ),
+            SitemapEntry(
+                'Task Manager',
+                f'{base_url}task_manager?state=busy',
+                ui_icon=g.icons['stats'],
+            ),
+            SitemapEntry(
+                'Search Projects',
+                f'{base_url}search_projects',
+                ui_icon=g.icons['search'],
+            ),
+            SitemapEntry(
+                'Delete Projects',
+                f'{base_url}delete_projects',
+                ui_icon=g.icons['delete'],
+            ),
+            SitemapEntry(
+                'Search Users',
+                f'{base_url}search_users',
+                ui_icon=g.icons['search'],
+            ),
+            SitemapEntry(
+                'Site Notifications',
+                f'{base_url}site_notifications',
+                ui_icon=g.icons['admin'],
+            ),
         ]
+
         for ep_name in sorted(g.entry_points['site_admin']):
             g.entry_points['site_admin'][ep_name]().update_sidebar_menu(links)
         return links
@@ -112,13 +140,19 @@ class SiteAdminController(object):
 
     def subscribe_artifact(self, url, user):
         artifact_url = urlparse(url).path[1:-1].split("/")
-        neighborhood = M.Neighborhood.query.find({
-            "url_prefix": "/" + artifact_url[0] + "/"}).first()
+        neighborhood = M.Neighborhood.query.find(
+            {"url_prefix": f"/{artifact_url[0]}/"}
+        ).first()
+
 
         if artifact_url[0] == "u":
-            project = M.Project.query.find({
-                "shortname": artifact_url[0] + "/" + artifact_url[1],
-                "neighborhood_id": neighborhood._id}).first()
+            project = M.Project.query.find(
+                {
+                    "shortname": f"{artifact_url[0]}/{artifact_url[1]}",
+                    "neighborhood_id": neighborhood._id,
+                }
+            ).first()
+
         else:
             project = M.Project.query.find({
                 "shortname": artifact_url[1],
@@ -139,7 +173,7 @@ class SiteAdminController(object):
         classes = set()
         for depth, cls in dfs(M.Artifact, build_model_inheritance_graph()):
             for pkg in tool_packages:
-                if cls.__module__.startswith(pkg + '.'):
+                if cls.__module__.startswith(f'{pkg}.'):
                     classes.add(cls)
         for cls in classes:
             for artifact in cls.query.find({"app_config_id": appconf._id}):
@@ -188,7 +222,7 @@ class SiteAdminController(object):
         try:
             end_dt = datetime.strptime(end_dt, '%Y/%m/%d %H:%M:%S')
         except ValueError:
-            end_dt = start_dt - timedelta(days=3) if not end_dt else end_dt
+            end_dt = end_dt or start_dt - timedelta(days=3)
         start = bson.ObjectId.from_datetime(start_dt)
         end = bson.ObjectId.from_datetime(end_dt)
         nb = M.Neighborhood.query.get(name='Users')
@@ -228,31 +262,34 @@ class SiteAdminController(object):
                 for msg in list(c.form_errors):
                     names = {'prefix': 'Neighborhood prefix', 'shortname':
                              'Project shortname', 'mount_point': 'Repository mount point'}
-                    error_msg += '%s: %s ' % (names[msg], c.form_errors[msg])
+                    error_msg += f'{names[msg]}: {c.form_errors[msg]} '
                     flash(error_msg, 'error')
                 return dict(prefix=prefix, shortname=shortname, mount_point=mount_point)
-            nbhd = M.Neighborhood.query.get(url_prefix='/%s/' % prefix)
+            nbhd = M.Neighborhood.query.get(url_prefix=f'/{prefix}/')
             if not nbhd:
-                flash('Neighborhood with prefix %s not found' %
-                      prefix, 'error')
+                flash(f'Neighborhood with prefix {prefix} not found', 'error')
                 return dict(prefix=prefix, shortname=shortname, mount_point=mount_point)
             c.project = M.Project.query.get(
                 shortname=shortname, neighborhood_id=nbhd._id)
             if not c.project:
                 flash(
-                    'Project with shortname %s not found in neighborhood %s' %
-                    (shortname, nbhd.name), 'error')
+                    f'Project with shortname {shortname} not found in neighborhood {nbhd.name}',
+                    'error',
+                )
+
                 return dict(prefix=prefix, shortname=shortname, mount_point=mount_point)
             c.app = c.project.app_instance(mount_point)
             if not c.app:
-                flash('Mount point %s not found on project %s' %
-                      (mount_point, c.project.shortname), 'error')
+                flash(
+                    f'Mount point {mount_point} not found on project {c.project.shortname}',
+                    'error',
+                )
+
                 return dict(prefix=prefix, shortname=shortname, mount_point=mount_point)
             source_url = c.app.config.options.get('init_from_url')
             source_path = c.app.config.options.get('init_from_path')
             if not (source_url or source_path):
-                flash('%s does not appear to be a cloned repo' %
-                      c.app, 'error')
+                flash(f'{c.app} does not appear to be a cloned repo', 'error')
                 return dict(prefix=prefix, shortname=shortname, mount_point=mount_point)
             allura.tasks.repo_tasks.reclone_repo.post(
                 prefix=prefix, shortname=shortname, mount_point=mount_point)
@@ -294,10 +331,7 @@ class SiteAdminController(object):
             result = {}
             for k,val in six.iteritems(obj):
                 name = k.rsplit('_', 1)
-                if len(name) == 2:
-                    name = name[0]
-                else:
-                    name = k
+                name = name[0] if len(name) == 2 else k
                 result[name] = val
             return result
 
@@ -324,7 +358,7 @@ class SiteAdminController(object):
         r = self._search(M.Project, fields, add_fields, q, f, page, limit, **kw)
         r['search_results_template'] = 'allura:templates/site_admin_search_projects_results.html'
         r['additional_display_fields'] = \
-            aslist(tg.config.get('search.project.additional_display_fields'), ',')
+                aslist(tg.config.get('search.project.additional_display_fields'), ',')
         r['provider'] = ProjectRegistrationProvider.get()
         return r
 
@@ -340,7 +374,7 @@ class SiteAdminController(object):
         r['objects'] = [dict(u, status=h.get_user_status(u['object'])) for u in r['objects']]
         r['search_results_template'] = 'allura:templates/site_admin_search_users_results.html'
         r['additional_display_fields'] = \
-            aslist(tg.config.get('search.user.additional_display_fields'), ',')
+                aslist(tg.config.get('search.user.additional_display_fields'), ',')
         r['provider'] = AuthenticationProvider.get(request)
         return r
 
@@ -370,7 +404,7 @@ class DeleteProjectsController(object):
         template = '{}    # {}'
         lines = []
         for input, p, error in projects:
-            comment = 'OK: {}'.format(p.url()) if p else error
+            comment = f'OK: {p.url()}' if p else error
             lines.append(template.format(input, comment))
         return '\n'.join(lines)
 
@@ -392,10 +426,8 @@ class DeleteProjectsController(object):
             redirect('.')
         parsed_projects = self.parse_projects(projects)
         projects = self.format_parsed_projects(parsed_projects)
-        edit_link = './?projects={}&reason={}&disable_users={}'.format(
-            h.urlquoteplus(projects),
-            h.urlquoteplus(reason or ''),
-            h.urlquoteplus(disable_users))
+        edit_link = f"./?projects={h.urlquoteplus(projects)}&reason={h.urlquoteplus((reason or ''))}&disable_users={h.urlquoteplus(disable_users)}"
+
         return {'projects': projects,
                 'parsed_projects': parsed_projects,
                 'edit_link': edit_link,
@@ -417,9 +449,9 @@ class DeleteProjectsController(object):
             redirect('.')
         task_params = ' '.join(task_params)
         if reason:
-            task_params = '-r {} {}'.format(pipes.quote(reason), task_params)
+            task_params = f'-r {pipes.quote(reason)} {task_params}'
         if disable_users:
-            task_params = '--disable-users {}'.format(task_params)
+            task_params = f'--disable-users {task_params}'
         DeleteProjects.post(task_params)
         flash('Delete scheduled', 'ok')
         redirect('.')
@@ -486,13 +518,21 @@ class SiteNotificationController(object):
                 form_title='Edit Site Notification',
                 form_action='update'
             )
-        form_value = {}
-        form_value['active'] = str(self.note.active)
-        form_value['impressions'] = self.note.impressions
-        form_value['content'] = self.note.content
-        form_value['user_role'] = self.note.user_role if self.note.user_role is not None else ''
-        form_value['page_regex'] = self.note.page_regex if self.note.page_regex is not None else ''
-        form_value['page_tool_type'] = self.note.page_tool_type if self.note.page_tool_type is not None else ''
+        form_value = {
+            'active': str(self.note.active),
+            'impressions': self.note.impressions,
+            'content': self.note.content,
+            'user_role': self.note.user_role
+            if self.note.user_role is not None
+            else '',
+            'page_regex': self.note.page_regex
+            if self.note.page_regex is not None
+            else '',
+            'page_tool_type': self.note.page_tool_type
+            if self.note.page_tool_type is not None
+            else '',
+        }
+
         return dict(form_errors={},
                     form_values=form_value,
                     form_title='Edit Site Notification',
@@ -603,7 +643,7 @@ class TaskManagerController(object):
             config_dict['user'] = user
         with h.push_config(c, **config_dict):
             task = task.post(*args, **kw)
-        redirect('view/%s' % task._id)
+        redirect(f'view/{task._id}')
 
     @expose()
     @require_post()
@@ -615,7 +655,7 @@ class TaskManagerController(object):
         if task is None:
             raise HTTPNotFound()
         task.state = 'ready'
-        redirect('../view/%s' % task._id)
+        redirect(f'../view/{task._id}')
 
     @expose('json:')
     def task_doc(self, task_name, **kw):
@@ -662,7 +702,7 @@ class AdminUserDetailsController(object):
             'audit_log': audit_log,
         }
         p = AuthenticationProvider.get(request)
-        info.update(p.user_details(user))
+        info |= p.user_details(user)
         return info
 
     def _audit_log(self, user, limit, page):

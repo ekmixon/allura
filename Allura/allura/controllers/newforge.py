@@ -42,11 +42,11 @@ class NewForgeController(object):
             raise exc.HTTPBadRequest()
         h.set_context(project, app, neighborhood=neighborhood)
 
-        if app == 'wiki':
-            html = g.markdown_wiki.convert(markdown)
-        else:
-            html = g.markdown.convert(markdown)
-        return html
+        return (
+            g.markdown_wiki.convert(markdown)
+            if app == 'wiki'
+            else g.markdown.convert(markdown)
+        )
 
     @expose()
     def tool_icon_css(self, *args, **kw):
@@ -64,9 +64,9 @@ class NewForgeController(object):
     @expose('jinja:allura:templates/markdown_syntax.html')
     def markdown_syntax(self, **kw):
         'Static page explaining markdown.'
-        return dict()
+        return {}
 
     @expose('jinja:allura:templates/markdown_syntax_dialog.html')
     def markdown_syntax_dialog(self, **kw):
         'Static dialog page about how to use markdown.'
-        return dict()
+        return {}

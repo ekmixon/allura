@@ -101,7 +101,7 @@ class Credentials(object):
                 'project_id': {'$in': project_ids},
                 'name': None})
             q = chain(q0, q1)
-        roles_by_project = dict((pid, []) for pid in project_ids)
+        roles_by_project = {pid: [] for pid in project_ids}
         for role in q:
             roles_by_project[role['project_id']].append(role)
         for pid, roles in six.iteritems(roles_by_project):
@@ -116,7 +116,7 @@ class Credentials(object):
             return
         q = self.project_role.find({
             'project_id': {'$in': project_ids}})
-        roles_by_project = dict((pid, []) for pid in project_ids)
+        roles_by_project = {pid: [] for pid in project_ids}
         for role in q:
             roles_by_project[role['project_id']].append(role)
         for pid, roles in six.iteritems(roles_by_project):
@@ -139,10 +139,7 @@ class Credentials(object):
         roles = self.users.get((user_id, project_id))
         if roles is None:
             if project_id is None:
-                if user_id is None:
-                    q = []
-                else:
-                    q = self.project_role.find({'user_id': user_id})
+                q = [] if user_id is None else self.project_role.find({'user_id': user_id})
                 roles = RoleCache(self, q)
             else:
                 self.load_user_roles(user_id, project_id)
@@ -206,7 +203,7 @@ class RoleCache(object):
 
     @LazyProperty
     def index(self):
-        return dict((r['_id'], r) for r in self.q)
+        return {r['_id']: r for r in self.q}
 
     @LazyProperty
     def named(self):
@@ -252,7 +249,7 @@ class RoleCache(object):
     def reaching_roles(self):
         def _iter():
             to_visit = list(self.index.items())
-            project_ids = set([r['project_id'] for _id, r in to_visit])
+            project_ids = {r['project_id'] for _id, r in to_visit}
             pr_index = {r['_id']: r for r in self.cred.project_role.find({
                 'project_id': {'$in': list(project_ids)},
                 'user_id': None,
@@ -266,6 +263,7 @@ class RoleCache(object):
                 for i in role['roles']:
                     if i in pr_index:
                         to_visit.append((i, pr_index[i]))
+
         return RoleCache(self.cred, _iter())
 
     @LazyProperty
@@ -442,9 +440,7 @@ def all_allowed(obj, user_or_role=None, project=None):
                         # permission)
                         denied[role_id].add(ace.permission)
         obj = obj.parent_security_context()
-    if M.ALL_PERMISSIONS in perms:
-        return set([M.ALL_PERMISSIONS])
-    return perms
+    return {M.ALL_PERMISSIONS} if M.ALL_PERMISSIONS in perms else perms
 
 
 def is_allowed_by_role(obj, permission, role_name, project):
@@ -471,17 +467,16 @@ def require(predicate, message=None):
         message = """You don't have permission to do that.
                      You must ask a project administrator for rights to perform this task.
                      Please click the back button to return to the previous page."""
-    if c.user != M.User.anonymous():
-        request.environ['error_message'] = message
-        raise exc.HTTPForbidden(detail=message)
-    else:
+    if c.user == M.User.anonymous():
         raise exc.HTTPUnauthorized()
+    request.environ['error_message'] = message
+    raise exc.HTTPForbidden(detail=message)
 
 
 def require_access(obj, permission, **kwargs):
     if obj is not None:
         predicate = has_access(obj, permission, **kwargs)
-        return require(predicate, message='%s access required' % permission.capitalize())
+        return require(predicate, message=f'{permission.capitalize()} access required')
     else:
         raise exc.HTTPForbidden(
             detail="Could not verify permissions for this page.")
@@ -528,10 +523,12 @@ def simple_grant(acl, role_id, permission):
 
 
 def simple_revoke(acl, role_id, permission):
-    remove = []
-    for i, ace in enumerate(acl):
-        if ace.role_id == role_id and ace.permission == permission:
-            remove.append(i)
+    remove = [
+        i
+        for i, ace in enumerate(acl)
+        if ace.role_id == role_id and ace.permission == permission
+    ]
+
     for i in reversed(remove):
         acl.pop(i)
 
@@ -572,9 +569,16 @@ class HIBPClient(object):
             sha_1_first_5 = sha_1[:5]
 
             # hit HIBP API
-            headers = {'User-Agent': '{}-pwnage-checker'.format(tg.config.get('site_name', 'Allura'))}
-            resp = requests.get('https://api.pwnedpasswords.com/range/{}'.format(sha_1_first_5), timeout=1,
-                                headers=headers)
+            headers = {
+                'User-Agent': f"{tg.config.get('site_name', 'Allura')}-pwnage-checker"
+            }
+
+            resp = requests.get(
+                f'https://api.pwnedpasswords.com/range/{sha_1_first_5}',
+                timeout=1,
+                headers=headers,
+            )
+
             # check results
             result = cls.scan_response(resp, sha_1)
 
@@ -585,7 +589,7 @@ class HIBPClient(object):
             raise HIBPCompromisedCredentials(result, sha_1_first_5)
 
     @classmethod
-    def scan_response(self, resp, sha):
+    def scan_response(cls, resp, sha):
         """
         Scans an API result from HIBP matching the supplied SHA
         :return: The entry count HIBP has of the password; 0 if not present

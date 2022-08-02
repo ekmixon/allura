@@ -60,11 +60,13 @@ def check_rate_limit(num_allowed, time_allowed, attempts):
     :param list[int] attempts:
     :return: tuple: ok (bool), attempts still in window (list[int])
     '''
-    attempts_in_limit = []
     now = int(time())
-    for prev_attempt in attempts:
-        if now - prev_attempt <= time_allowed:
-            attempts_in_limit.append(prev_attempt)
+    attempts_in_limit = [
+        prev_attempt
+        for prev_attempt in attempts
+        if now - prev_attempt <= time_allowed
+    ]
+
     attempts_in_limit.append(now)
 
     ok = len(attempts_in_limit) <= num_allowed
@@ -140,8 +142,7 @@ class TotpService(object):
     def get_qr_code(self, totp, user, **qrcode_params):
         qrcode_params.setdefault('box_size', 5)
         uri = totp.get_provisioning_uri(user.username, config['site_name'])
-        qr = qrcode.make(uri, **qrcode_params)
-        return qr
+        return qrcode.make(uri, **qrcode_params)
 
     def get_secret_key(self, user):
         '''
@@ -235,8 +236,7 @@ class GoogleAuthenticatorFile(object):
         return gaf
 
     def dump(self):
-        lines = []
-        lines.append(six.ensure_text(b32encode(self.key)).replace('=', ''))
+        lines = [six.ensure_text(b32encode(self.key)).replace('=', '')]
         for opt, value in six.iteritems(self.options):
             parts = ['"', opt]
             if value is not None:
@@ -269,19 +269,18 @@ class GoogleAuthenticatorPamFilesystemMixin(object):
             with open(self.config_file(user)) as f:
                 return GoogleAuthenticatorFile.load(f.read())
         except IOError as e:
-            if e.errno == errno.ENOENT:  # file doesn't exist
-                if autocreate:
-                    gaf = GoogleAuthenticatorFile()
-                    gaf.options['RATE_LIMIT'] = '{} {}'.format(
-                        asint(config.get('auth.multifactor.rate_limit.num', 3)),
-                        asint(config.get('auth.multifactor.rate_limit.time', 30)))
-                    gaf.options['DISALLOW_REUSE'] = None
-                    gaf.options['TOTP_AUTH'] = None
-                    return gaf
-                else:
-                    return None
-            else:
+            if e.errno != errno.ENOENT:
                 raise
+            if not autocreate:
+                return None
+            gaf = GoogleAuthenticatorFile()
+            gaf.options[
+                'RATE_LIMIT'
+            ] = f"{asint(config.get('auth.multifactor.rate_limit.num', 3))} {asint(config.get('auth.multifactor.rate_limit.time', 30))}"
+
+            gaf.options['DISALLOW_REUSE'] = None
+            gaf.options['TOTP_AUTH'] = None
+            return gaf
 
     def write_file(self, user, gaf):
         conf_file = self.config_file(user)
@@ -296,10 +295,7 @@ class GoogleAuthenticatorPamFilesystemMixin(object):
         os.rename(f.name, conf_file)
 
     def enforce_rate_limit(self, user, existing_gaf=None):
-        if existing_gaf:
-            gaf = existing_gaf
-        else:
-            gaf = self.read_file(user)
+        gaf = existing_gaf or self.read_file(user)
         if not gaf:
             return
         rate_limits = gaf.options['RATE_LIMIT'].split(' ')
@@ -325,11 +321,7 @@ class GoogleAuthenticatorPamFilesystemTotpService(GoogleAuthenticatorPamFilesyst
     '''
 
     def get_secret_key(self, user):
-        gaf = self.read_file(user)
-        if gaf:
-            return gaf.key
-        else:
-            return None
+        return gaf.key if (gaf := self.read_file(user)) else None
 
     def set_secret_key(self, user, key):
         if key is None:
@@ -367,7 +359,7 @@ class RecoveryCodeService(object):
     def generate_one_code(self):
         # for compatibility with Google PAM file, we only do digits
         length = asint(config.get('auth.multifactor.recovery_code.length', 8))
-        return ''.join([random.choice(string.digits) for i in range(length)])
+        return ''.join([random.choice(string.digits) for _ in range(length)])
 
     def regenerate_codes(self, user):
         '''
@@ -377,9 +369,7 @@ class RecoveryCodeService(object):
         :return: codes, ``list[str]``
         '''
         count = asint(config.get('auth.multifactor.recovery_code.count', 10))
-        codes = [
-            self.generate_one_code() for i in range(count)
-        ]
+        codes = [self.generate_one_code() for _ in range(count)]
         self.replace_codes(user, codes)
         return codes
 
@@ -425,8 +415,7 @@ class MongodbRecoveryCodeService(MongodbMultifactorCommon, RecoveryCodeService):
 
     def verify_and_remove_code(self, user, code):
         self.enforce_rate_limit(user)
-        rc = RecoveryCode.query.get(user_id=user._id, code=code)
-        if rc:
+        if rc := RecoveryCode.query.get(user_id=user._id, code=code):
             rc.query.delete()
             session(rc).flush(rc)
             return True
@@ -437,23 +426,17 @@ class MongodbRecoveryCodeService(MongodbMultifactorCommon, RecoveryCodeService):
 class GoogleAuthenticatorPamFilesystemRecoveryCodeService(GoogleAuthenticatorPamFilesystemMixin, RecoveryCodeService):
 
     def get_codes(self, user):
-        gaf = self.read_file(user)
-        if gaf:
-            return gaf.recovery_codes
-        else:
-            return []
+        return gaf.recovery_codes if (gaf := self.read_file(user)) else []
 
     def replace_codes(self, user, codes):
-        gaf = self.read_file(user)
-        if gaf:
+        if gaf := self.read_file(user):
             gaf.recovery_codes = codes
             self.write_file(user, gaf)
         elif codes:
             raise IOError('No .google-authenticator file exists, cannot add recovery codes.')
 
     def verify_and_remove_code(self, user, code):
-        gaf = self.read_file(user)
-        if gaf:
+        if gaf := self.read_file(user):
             try:
                 self.enforce_rate_limit(user, gaf)
                 if code in gaf.recovery_codes:

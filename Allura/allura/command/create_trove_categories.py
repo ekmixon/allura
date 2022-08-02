@@ -2027,6 +2027,7 @@ class CreateTroveCategoriesCommand(base.Command):
             'Topic',
         ])
         M.TroveCategory.query.update(
-            {'fullname': re.compile(r'^(%s)' % categories_regex)},
+            {'fullname': re.compile(f'^({categories_regex})')},
             {'$set': {'show_as_skill': True}},
-            multi=True)
+            multi=True,
+        )

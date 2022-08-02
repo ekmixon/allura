@@ -152,8 +152,7 @@ class Notification(MappedClass):
 
         from allura.model import Project
         idx = artifact.index() if artifact else None
-        subject_prefix = '[%s:%s] ' % (
-            c.project.shortname, c.app.config.options.mount_point)
+        subject_prefix = f'[{c.project.shortname}:{c.app.config.options.mount_point}] '
         post = ''
         if topic == 'message':
             post = kwargs.pop('post')
@@ -167,19 +166,18 @@ class Notification(MappedClass):
                     attach.file.seek(0, 2)
                     bytecount = attach.file.tell()
                     attach.file.seek(0)
-                    url = h.absurl('{}attachment/{}'.format(
-                        post.url(), h.urlquote(attach.filename)))
+                    url = h.absurl(f'{post.url()}attachment/{h.urlquote(attach.filename)}')
                     text = "%s\n- [%s](%s) (%s; %s)" % (
                         text, attach.filename, url,
                         h.do_filesizeformat(bytecount), attach.type)
 
             subject = post.subject or ''
             if post.parent_id and not subject.lower().startswith('re:'):
-                subject = 'Re: ' + subject
+                subject = f'Re: {subject}'
             author = post.author()
             msg_id = kwargs.get('message_id') or artifact.url() + post._id
             parent_msg_id = artifact.url() + \
-                post.parent_id if post.parent_id else artifact.message_id()
+                    post.parent_id if post.parent_id else artifact.message_id()
             d = dict(
                 _id=msg_id,
                 from_address=str(
@@ -199,8 +197,11 @@ class Notification(MappedClass):
                     subject=kwargs.pop('subject', ''))
             return n
         else:
-            subject = kwargs.pop('subject', '%s modified by %s' % (
-                h.get_first(idx, 'title'), c.user.get_pref('display_name')))
+            subject = kwargs.pop(
+                'subject',
+                f"{h.get_first(idx, 'title')} modified by {c.user.get_pref('display_name')}",
+            )
+
             reply_to = '"%s" <%s>' % (
                 h.get_first(idx, 'title'),
                 getattr(artifact, 'email_address', g.noreply))
@@ -225,8 +226,7 @@ class Notification(MappedClass):
             d['text'] = ''
         try:
             ''' Add addional text to the notification e-mail based on the artifact type '''
-            template = cls.view.get_template(
-                'mail/' + artifact.type_s + '.txt')
+            template = cls.view.get_template(f'mail/{artifact.type_s}.txt')
             d['text'] += template.render(dict(c=c, g=g,
                                          config=config, data=artifact, post=post, h=h))
         except jinja2.TemplateNotFound:
@@ -235,8 +235,11 @@ class Notification(MappedClass):
             ''' Catch any errors loading or rendering the template,
             but the notification still gets sent if there is an error
             '''
-            log.warn('Could not render notification template %s' %
-                     artifact.type_s, exc_info=True)
+            log.warn(
+                f'Could not render notification template {artifact.type_s}',
+                exc_info=True,
+            )
+
 
         assert d['reply_to_address'] is not None
         project = c.project
@@ -291,12 +294,11 @@ class Notification(MappedClass):
                   self._id, user_id)
         # Don't send if user disabled
         if not user:
-            log.debug("Skipping notification - enabled user %s not found" %
-                      user_id)
+            log.debug(f"Skipping notification - enabled user {user_id} not found")
             return
         # Don't send if user doesn't have read perms to the artifact
         if user and artifact and \
-                not security.has_access(artifact, 'read', user)():
+                    not security.has_access(artifact, 'read', user)():
             log.debug("Skipping notification - User %s doesn't have read "
                       "access to artifact %s" % (user_id, str(self.ref_id)))
             log.debug("User roles [%s]; artifact ACL [%s]; PSC ACL [%s]",
@@ -324,27 +326,30 @@ class Notification(MappedClass):
             return
         user = User.query.get(_id=ObjectId(user_id), disabled=False, pending=False)
         if not user:
-            log.debug("Skipping notification - enabled user %s not found " %
-                      user_id)
+            log.debug(f"Skipping notification - enabled user {user_id} not found ")
             return
         # Filter out notifications for which the user doesn't have read
         # permissions to the artifact.
         artifact = self.ref.artifact
 
         def perm_check(notification):
-            return not (user and artifact) or \
-                security.has_access(artifact, 'read', user)()
+            return (
+                not user
+                or not artifact
+                or security.has_access(artifact, 'read', user)()
+            )
+
         notifications = list(filter(perm_check, notifications))
 
         log.debug('Sending digest of notifications [%s] to user %s', ', '.join(
             [n._id for n in notifications]), user_id)
         if reply_to_address is None:
             reply_to_address = from_address
-        text = ['Digest of %s' % subject]
+        text = [f'Digest of {subject}']
         for n in notifications:
-            text.append('From: %s' % n.from_address)
-            text.append('Subject: %s' % (n.subject or '(no subject)'))
-            text.append('Message-ID: %s' % n._id)
+            text.append(f'From: {n.from_address}')
+            text.append(f"Subject: {n.subject or '(no subject)'}")
+            text.append(f'Message-ID: {n._id}')
             text.append('')
             text.append(n.text or '-no text-')
         text.append(n.footer())
@@ -358,17 +363,16 @@ class Notification(MappedClass):
             text=text)
 
     @classmethod
-    def send_summary(self, user_id, from_address, subject, notifications):
+    def send_summary(cls, user_id, from_address, subject, notifications):
         if not notifications:
             return
         log.debug('Sending summary of notifications [%s] to user %s', ', '.join(
             [n._id for n in notifications]), user_id)
-        text = ['Digest of %s' % subject]
+        text = [f'Digest of {subject}']
         for n in notifications:
-            text.append('From: %s' % n.from_address)
-            text.append('Subject: %s' % (n.subject or '(no subject)'))
-            text.append('Message-ID: %s' % n._id)
-            text.append('')
+            text.append(f'From: {n.from_address}')
+            text.append(f"Subject: {n.subject or '(no subject)'}")
+            text.extend((f'Message-ID: {n._id}', ''))
             text.append(h.text.truncate(n.text or '-no text-', 128))
         text.append(n.footer())
         text = '\n'.join(text)
@@ -444,11 +448,12 @@ class Mailbox(MappedClass):
             project_id = c.project._id
         if app_config_id is None:
             app_config_id = c.app.config._id
-        tool_already_subscribed = cls.query.get(user_id=user_id,
-                                                project_id=project_id,
-                                                app_config_id=app_config_id,
-                                                artifact_index_id=None)
-        if tool_already_subscribed:
+        if tool_already_subscribed := cls.query.get(
+            user_id=user_id,
+            project_id=project_id,
+            app_config_id=app_config_id,
+            artifact_index_id=None,
+        ):
             return
         if artifact is None:
             artifact_title = 'All artifacts'
@@ -459,11 +464,12 @@ class Mailbox(MappedClass):
             artifact_title = h.get_first(i, 'title')
             artifact_url = artifact.url()
             artifact_index_id = i['id']
-            artifact_already_subscribed = cls.query.get(user_id=user_id,
-                                                        project_id=project_id,
-                                                        app_config_id=app_config_id,
-                                                        artifact_index_id=artifact_index_id)
-            if artifact_already_subscribed:
+            if artifact_already_subscribed := cls.query.get(
+                user_id=user_id,
+                project_id=project_id,
+                app_config_id=app_config_id,
+                artifact_index_id=artifact_index_id,
+            ):
                 return
         d = dict(
             user_id=user_id, project_id=project_id, app_config_id=app_config_id,
@@ -736,9 +742,9 @@ class SiteNotification(MappedClass):
             content=self.content,
             active=self.active,
             impressions=self.impressions,
-            user_role=self.user_role if self.user_role else '',
-            page_regex=self.page_regex if self.page_regex else '',
-            page_tool_type=self.page_tool_type if self.page_tool_type else ''
+            user_role=self.user_role or '',
+            page_regex=self.page_regex or '',
+            page_tool_type=self.page_tool_type or '',
         )
 
     @classmethod

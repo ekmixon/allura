@@ -117,13 +117,12 @@ class Neighborhood(MappedClass):
 
     def url(self):
         url = self.url_prefix
-        if url.startswith('//'):
-            try:
-                return request.scheme + ':' + url
-            except TypeError:  # pragma no cover
-                return 'http:' + url
-        else:
+        if not url.startswith('//'):
             return url
+        try:
+            return f'{request.scheme}:{url}'
+        except TypeError:  # pragma no cover
+            return f'http:{url}'
 
     @LazyProperty
     def projects_count(self):
@@ -157,9 +156,7 @@ class Neighborhood(MappedClass):
                                          private_project, apps, omit_event=omit_event, **kwargs)
 
     def get_custom_css(self):
-        if self.allow_custom_css:
-            return self.css
-        return ""
+        return self.css if self.allow_custom_css else ""
 
     @property
     def has_home_tool(self):
@@ -168,22 +165,20 @@ class Neighborhood(MappedClass):
 
     @LazyProperty
     def icon(self):
-        # New icon storage uses the neighborhood_project object, so Project.icon* methods can be shared
-        if self.neighborhood_project.get_tool_data('allura', 'icon_original_size'):
-            icon = self.neighborhood_project.icon
-        else:
-            # fallback to older storage location
-            icon = NeighborhoodFile.query.get(neighborhood_id=self._id)
-        return icon
+        return (
+            self.neighborhood_project.icon
+            if self.neighborhood_project.get_tool_data(
+                'allura', 'icon_original_size'
+            )
+            else NeighborhoodFile.query.get(neighborhood_id=self._id)
+        )
 
     @property
     def allow_custom_css(self):
-        return self.features['css'] == 'custom' or self.features['css'] == 'picker'
+        return self.features['css'] in ['custom', 'picker']
 
     def get_project_template(self):
-        if self.project_template:
-            return json.loads(self.project_template)
-        return {}
+        return json.loads(self.project_template) if self.project_template else {}
 
     def get_max_projects(self):
         return self.features['max_projects']
@@ -208,37 +203,32 @@ class Neighborhood(MappedClass):
 
                 css_type = m.group(1)
                 if css_type == "projecttitlefont":
-                    m = re_font_project_title.search(css_line)
-                    if m:
+                    if m := re_font_project_title.search(css_line):
                         projecttitlefont['value'] = m.group(1)
 
                 elif css_type == "projecttitlecolor":
-                    m = re_color_project_title.search(css_line)
-                    if m:
+                    if m := re_color_project_title.search(css_line):
                         projecttitlecolor['value'] = m.group(1)
 
                 elif css_type == "barontop":
-                    m = re_bgcolor_barontop.search(css_line)
-                    if m:
+                    if m := re_bgcolor_barontop.search(css_line):
                         barontop['value'] = m.group(1)
 
                 elif css_type == "titlebarbackground":
-                    m = re_bgcolor_titlebar.search(css_line)
-                    if m:
+                    if m := re_bgcolor_titlebar.search(css_line):
                         titlebarbackground['value'] = m.group(1)
 
                 elif css_type == "titlebarcolor":
-                    m = re_color_titlebar.search(css_line)
-                    if m:
+                    if m := re_color_titlebar.search(css_line):
                         titlebarcolor['value'] = m.group(1)
 
-        styles_list = []
-        styles_list.append(projecttitlefont)
-        styles_list.append(projecttitlecolor)
-        styles_list.append(barontop)
-        styles_list.append(titlebarbackground)
-        styles_list.append(titlebarcolor)
-        return styles_list
+        return [
+            projecttitlefont,
+            projecttitlecolor,
+            barontop,
+            titlebarbackground,
+            titlebarcolor,
+        ]
 
     @staticmethod
     def compile_css_for_picker(css_form_dict):
@@ -275,14 +265,14 @@ class Neighborhood(MappedClass):
 
     def get_anchored_tools(self):
         if not self.anchored_tools:
-            return dict()
+            return {}
         try:
             anchored_tools = [at.strip()
                               for at in self.anchored_tools.split(',')]
             return OrderedDict((tool.split(':')[0].lower(), tool.split(':')[1]) for tool in anchored_tools)
         except Exception:
             log.warning("anchored_tools isn't valid", exc_info=True)
-            return dict()
+            return {}
 
     def get_prohibited_tools(self):
         prohibited_tools = []

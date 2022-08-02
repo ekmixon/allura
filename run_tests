@@ -51,15 +51,21 @@ print_ensured = six.ensure_binary if six.PY2 else six.ensure_text
 
 
 def run_one(cmd, **popen_kwargs):
-    cmd_to_show = '`{}` in {}'.format(cmd, popen_kwargs.get('cwd', '.'))
-    print('{} running {}\n'.format(threading.current_thread(), cmd_to_show))
+    cmd_to_show = f"`{cmd}` in {popen_kwargs.get('cwd', '.')}"
+    print(f'{threading.current_thread()} running {cmd_to_show}\n')
     sys.stdout.flush()
 
-    all_popen_kwargs = dict(shell=True, stderr=subprocess.STDOUT,
-                            stdout=subprocess.PIPE,
-                            bufsize=1,  # 1 == line-buffered
-                            close_fds='posix' in sys.builtin_module_names)
-    all_popen_kwargs.update(popen_kwargs)
+    all_popen_kwargs = (
+        dict(
+            shell=True,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            bufsize=1,  # 1 == line-buffered
+            close_fds='posix' in sys.builtin_module_names,
+        )
+        | popen_kwargs
+    )
+
     proc = subprocess.Popen(cmd, **all_popen_kwargs)
     while proc.poll() is None:
         line = proc.stdout.readline()
@@ -71,7 +77,7 @@ def run_one(cmd, **popen_kwargs):
     out_remainder, _ = proc.communicate()
     sys.stdout.write(print_ensured(out_remainder))
     sys.stdout.flush()
-    print('finished {}'.format(cmd_to_show))
+    print(f'finished {cmd_to_show}')
     sys.stdout.flush()
     return proc
 
@@ -115,7 +121,7 @@ def check_packages(packages):
         try:
             __import__(pkg.lower())
         except ImportError:
-            print("Not running tests for {}, since it isn't set up".format(pkg))
+            print(f"Not running tests for {pkg}, since it isn't set up")
         else:
             yield pkg
 
@@ -133,9 +139,7 @@ def run_tests_in_parallel(options, nosetests_args):
             if pkg not in NOT_MULTIPROC_SAFE else '')
 
     def get_concurrent_suites():
-        if '-n' in sys.argv:
-            return options.concurrent_suites
-        return CPUS
+        return options.concurrent_suites if '-n' in sys.argv else CPUS
 
     cmds = []
     env = dict(os.environ,

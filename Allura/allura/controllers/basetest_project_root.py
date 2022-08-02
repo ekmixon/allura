@@ -86,28 +86,26 @@ class BasetestProjectRootController(WsgiDispatchController, ProjectController):
         except exc.HTTPNotFound:
             pass
 
-        # magic shorthand helper lookups so self.app.get('/wiki') instantiates a wiki and calls /p/test/wiki controller
-
-        subproject = M.Project.query.get(
-            shortname=c.project.shortname + '/' + name,
-            neighborhood_id=self.p_nbhd._id)
-        if subproject:
+        if subproject := M.Project.query.get(
+            shortname=f'{c.project.shortname}/{name}',
+            neighborhood_id=self.p_nbhd._id,
+        ):
             c.project = subproject
             c.app = None
             return ProjectController(), remainder
         app = c.project.app_instance(name)
         if app is None:
-            prefix = 'test-app-'
             ep_name = name
             if name.startswith('test-app-'):
+                prefix = 'test-app-'
                 ep_name = name[len(prefix):]
             try:
                 c.project.install_app(ep_name, name)
             except KeyError:
                 raise exc.HTTPNotFound(name)
             app = c.project.app_instance(name)
-            if app is None:
-                raise exc.HTTPNotFound(name)
+        if app is None:
+            raise exc.HTTPNotFound(name)
         c.app = app
         return app.root, remainder
 
@@ -120,9 +118,7 @@ class BasetestProjectRootController(WsgiDispatchController, ProjectController):
         c.project = M.Project.query.get(
             shortname='test', neighborhood_id=self.p_nbhd._id)
         auth = plugin.AuthenticationProvider.get(request)
-        if asbool(environ.get('disable_auth_magic')):
-            c.user = auth.authenticate_request()
-        else:
+        if not asbool(environ.get('disable_auth_magic')):
             user = auth.by_username(environ.get('username', 'test-admin'))
             if not user:
                 user = M.User.anonymous()
@@ -130,7 +126,7 @@ class BasetestProjectRootController(WsgiDispatchController, ProjectController):
             # save and persist, so that a creation time is set
             environ['beaker.session'].save()
             environ['beaker.session'].persist()
-            c.user = auth.authenticate_request()
+        c.user = auth.authenticate_request()
         return super(BasetestProjectRootController, self)._perform_call(context)
 
 
@@ -149,7 +145,7 @@ class NamedController(object):
 
     @expose()
     def index(self, **kw):
-        return 'index ' + self.name
+        return f'index {self.name}'
 
     @expose()
     def _default(self, *args):
@@ -191,7 +187,7 @@ class SecurityTest(object):
     def needs_project_access_ok(self):
         pred = has_access(c.project, 'read')
         if not pred():
-            log.info('Inside needs_project_access, c.user = %s' % c.user)
+            log.info(f'Inside needs_project_access, c.user = {c.user}')
         require(pred)
         return ''
 

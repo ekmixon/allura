@@ -101,25 +101,34 @@ class RepositoryApp(Application):
                 SitemapEntry(menu_id, '.')[self.sidebar_menu()]]
 
     def admin_menu(self):
-        admin_url = c.project.url() + 'admin/' + \
-            self.config.options.mount_point + '/'
+        admin_url = (
+            f'{c.project.url()}admin/' + self.config.options.mount_point
+        ) + '/'
+
         links = [
             SitemapEntry(
                 'Checkout URL',
-                c.project.url() + 'admin/' +
-                self.config.options.mount_point +
-                '/' + 'checkout_url',
-                className='admin_modal'),
+                (
+                    (
+                        (
+                            f'{c.project.url()}admin/'
+                            + self.config.options.mount_point
+                        )
+                        + '/'
+                    )
+                    + 'checkout_url'
+                ),
+                className='admin_modal',
+            ),
             SitemapEntry(
-                'Viewable Files',
-                admin_url + 'extensions',
-                className='admin_modal'),
+                'Viewable Files', f'{admin_url}extensions', className='admin_modal'
+            ),
             SitemapEntry(
                 'Refresh Repository',
-                c.project.url() +
-                self.config.options.mount_point +
-                '/refresh'),
+                c.project.url() + self.config.options.mount_point + '/refresh',
+            ),
         ]
+
         links += super(RepositoryApp, self).admin_menu()
         [links.remove(l) for l in links[:] if l.label == 'Options']
         return links
@@ -130,23 +139,34 @@ class RepositoryApp(Application):
             return []
         links = []
         if not self.repo.is_empty():
-            links.append(SitemapEntry('Browse Commits', c.app.url + 'commit_browser',
-                                      ui_icon=g.icons['browse_commits']))
-        if self.forkable and self.repo.status == 'ready' and not self.repo.is_empty():
             links.append(
-                SitemapEntry('Fork', c.app.url + 'fork', ui_icon=g.icons['fork']))
+                SitemapEntry(
+                    'Browse Commits',
+                    f'{c.app.url}commit_browser',
+                    ui_icon=g.icons['browse_commits'],
+                )
+            )
+
+        if self.forkable and self.repo.status == 'ready' and not self.repo.is_empty():
+            links.append(SitemapEntry('Fork', f'{c.app.url}fork', ui_icon=g.icons['fork']))
         merge_request_count = self.repo.merge_requests_by_statuses(
             'open').count()
         if self.forkable:
             links += [
                 SitemapEntry(
-                    'Merge Requests', c.app.url + 'merge-requests/',
-                    small=merge_request_count)]
+                    'Merge Requests',
+                    f'{c.app.url}merge-requests/',
+                    small=merge_request_count,
+                )
+            ]
+
         if self.repo.forks:
             links += [
-                SitemapEntry('Forks', c.app.url + 'forks/',
-                             small=len(self.repo.forks))
+                SitemapEntry(
+                    'Forks', f'{c.app.url}forks/', small=len(self.repo.forks)
+                )
             ]
+
 
         has_upstream_repo = False
         if self.repo.upstream_repo.name:
@@ -163,27 +183,31 @@ class RepositoryApp(Application):
                 '/').split('/')
             links += [
                 SitemapEntry('Clone of'),
-                SitemapEntry('%s / %s' %
-                             (repo_path_parts[1], repo_path_parts[-1]),
-                             self.repo.upstream_repo.name)
+                SitemapEntry(
+                    f'{repo_path_parts[1]} / {repo_path_parts[-1]}',
+                    self.repo.upstream_repo.name,
+                ),
             ]
+
             if not c.app.repo.is_empty() and has_access(c.app.repo, 'admin'):
-                merge_url = c.app.url + 'request_merge'
+                merge_url = f'{c.app.url}request_merge'
                 if getattr(c, 'revision', None):
-                    merge_url = merge_url + '?branch=' + h.urlquote(c.revision)
+                    merge_url = f'{merge_url}?branch={h.urlquote(c.revision)}'
                 links.append(SitemapEntry('Request Merge', merge_url,
                              ui_icon=g.icons['merge'],
                                           ))
-            pending_upstream_merges = self.repo.pending_upstream_merges()
-            if pending_upstream_merges:
-                links.append(SitemapEntry(
-                    'Pending Merges',
-                    self.repo.upstream_repo.name + 'merge-requests/',
-                    small=pending_upstream_merges))
+            if pending_upstream_merges := self.repo.pending_upstream_merges():
+                links.append(
+                    SitemapEntry(
+                        'Pending Merges',
+                        f'{self.repo.upstream_repo.name}merge-requests/',
+                        small=pending_upstream_merges,
+                    )
+                )
+
         ref_url = self.repo.url_for_commit(
             self.default_branch_name, url_type='ref')
-        branches = self.repo.get_branches()
-        if branches:
+        if branches := self.repo.get_branches():
             links.append(SitemapEntry('Branches'))
             for branch in branches:
                 if branch.name == self.default_branch_name:
@@ -191,36 +215,34 @@ class RepositoryApp(Application):
                     branches.insert(0, branch)
                     break
             max_branches = 10
-            for branch in branches[:max_branches]:
-                links.append(SitemapEntry(
+            links.extend(
+                SitemapEntry(
                     branch.name,
-                    h.urlquote(self.repo.url_for_commit(branch.name) + 'tree/')))
+                    h.urlquote(f'{self.repo.url_for_commit(branch.name)}tree/'),
+                )
+                for branch in branches[:max_branches]
+            )
+
             if len(branches) > max_branches:
-                links.append(
-                    SitemapEntry(
-                        'More Branches',
-                        ref_url + 'branches/',
-                    ))
+                links.append(SitemapEntry('More Branches', f'{ref_url}branches/'))
         elif not self.repo.is_empty():
             # SVN repos, for example, should have a sidebar link to get to the main view
             links.append(
                 SitemapEntry('Browse Files', c.app.url)
             )
 
-        tags = self.repo.get_tags()
-        if tags:
+        if tags := self.repo.get_tags():
             links.append(SitemapEntry('Tags'))
             max_tags = 10
-            for b in tags[:max_tags]:
-                links.append(SitemapEntry(
-                    b.name,
-                    h.urlquote(self.repo.url_for_commit(b.name) + 'tree/')))
+            links.extend(
+                SitemapEntry(
+                    b.name, h.urlquote(f'{self.repo.url_for_commit(b.name)}tree/')
+                )
+                for b in tags[:max_tags]
+            )
+
             if len(tags) > max_tags:
-                links.append(
-                    SitemapEntry(
-                        'More Tags',
-                        ref_url + 'tags/',
-                    ))
+                links.append(SitemapEntry('More Tags', f'{ref_url}tags/'))
         return links
 
     def install(self, project):
@@ -276,19 +298,21 @@ class RepoAdminController(DefaultAdminController):
     @without_trailing_slash
     @expose('jinja:allura:templates/repo/default_branch.html')
     def set_default_branch_name(self, branch_name=None, **kw):
-        if (request.method == 'POST') and branch_name:
-            self.repo.set_default_branch(branch_name)
-            redirect(six.ensure_text(request.referer or '/'))
-        else:
+        if request.method != 'POST' or not branch_name:
             return dict(app=self.app,
                         default_branch_name=self.app.default_branch_name)
+        self.repo.set_default_branch(branch_name)
+        redirect(six.ensure_text(request.referer or '/'))
 
     @without_trailing_slash
     @expose('jinja:allura:templates/repo/checkout_url.html')
     def checkout_url(self):
-        return dict(app=self.app,
-                    merge_allowed=not asbool(config.get('scm.merge.{}.disabled'.format(self.app.config.tool_name))),
-                    )
+        return dict(
+            app=self.app,
+            merge_allowed=not asbool(
+                config.get(f'scm.merge.{self.app.config.tool_name}.disabled')
+            ),
+        )
 
     @without_trailing_slash
     @expose()
@@ -297,17 +321,22 @@ class RepoAdminController(DefaultAdminController):
     def set_checkout_url(self, **post_data):
         flash_msgs = []
         external_checkout_url = (post_data.get('external_checkout_url') or '').strip()
-        if 'external_checkout_url' not in c.form_errors:
-            if (self.app.config.options.get('external_checkout_url') or '') != external_checkout_url:
-                self.app.config.options.external_checkout_url = external_checkout_url
-                flash_msgs.append("External checkout URL successfully changed.")
-        else:
-            flash_msgs.append("Invalid external checkout URL: %s." % c.form_errors['external_checkout_url'])
+        if 'external_checkout_url' in c.form_errors:
+            flash_msgs.append(
+                f"Invalid external checkout URL: {c.form_errors['external_checkout_url']}."
+            )
 
+
+        elif (self.app.config.options.get('external_checkout_url') or '') != external_checkout_url:
+            self.app.config.options.external_checkout_url = external_checkout_url
+            flash_msgs.append("External checkout URL successfully changed.")
         merge_disabled = bool(post_data.get('merge_disabled'))
         if merge_disabled != self.app.config.options.get('merge_disabled', False):
             self.app.config.options.merge_disabled = merge_disabled
-            flash_msgs.append('One-click merge {}.'.format('disabled' if merge_disabled else 'enabled'))
+            flash_msgs.append(
+                f"One-click merge {'disabled' if merge_disabled else 'enabled'}."
+            )
+
 
         if flash_msgs:
             message = ' '.join(flash_msgs)

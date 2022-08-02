@@ -89,7 +89,7 @@ class RootController(WsgiDispatchController):
         
     @expose()
     def _lookup(self, nbhd_mount, *remainder):
-        n_url_prefix = '/%s/' % nbhd_mount
+        n_url_prefix = f'/{nbhd_mount}/'
         n = self._lookup_neighborhood(n_url_prefix)
         if n and not n.url_prefix.startswith('//'):
             return NeighborhoodController(n), remainder
@@ -97,8 +97,7 @@ class RootController(WsgiDispatchController):
             raise exc.HTTPNotFound
 
     def _lookup_neighborhood(self, url_prefix):
-        n = M.Neighborhood.query.get(url_prefix=url_prefix)
-        return n
+        return M.Neighborhood.query.get(url_prefix=url_prefix)
 
     def _setup_request(self):
         c.project = c.app = None
@@ -114,7 +113,7 @@ class RootController(WsgiDispatchController):
             # pylons.configuration defaults to "no-cache" only.
             # See also http://blog.55minutes.com/2011/10/how-to-defeat-the-browser-back-button-cache/ and
             # https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/http-caching?hl=en#defining_optimal_cache-control_policy
-            response.headers[str('Cache-Control')] = str('no-cache, no-store, must-revalidate')
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
 
     @expose()
     @with_trailing_slash
@@ -131,6 +130,7 @@ class RootController(WsgiDispatchController):
         categories = M.ProjectCategory.query.find(
             {'parent_id': None}).sort('name').all()
         c.custom_sidebar_menu = [
-            SitemapEntry(cat.label, '/browse/' + cat.name) for cat in categories
+            SitemapEntry(cat.label, f'/browse/{cat.name}') for cat in categories
         ]
+
         return dict(neighborhoods=neighborhoods, title="All Neighborhoods")

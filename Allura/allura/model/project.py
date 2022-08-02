@@ -150,8 +150,12 @@ class TroveCategory(MappedClass):
 
     @property
     def children(self):
-        return sorted(self.query.find({'fullpath': re.compile('^' + re.escape(self.fullpath) + ' ::')}).all(),
-                      key=lambda t: t.fullpath.lower())
+        return sorted(
+            self.query.find(
+                {'fullpath': re.compile(f'^{re.escape(self.fullpath)} ::')}
+            ).all(),
+            key=lambda t: t.fullpath.lower(),
+        )
 
     @property
     def type(self):
@@ -182,8 +186,7 @@ class ProjectNameFieldProperty(FieldProperty):
     """
     def __get__(self, instance, cls=None):
         if instance:
-            owning_user = instance.user_project_of
-            if owning_user:
+            if owning_user := instance.user_project_of:
                 return owning_user.username
         return super(ProjectNameFieldProperty, self).__get__(instance, cls)
 
@@ -270,10 +273,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
 
     @property
     def permissions(self):
-        if self.shortname == '--init--':
-            return self._perms_init
-        else:
-            return self._perms_base
+        return self._perms_init if self.shortname == '--init--' else self._perms_base
 
     def parent_security_context(self):
         '''ACL processing should proceed up the project hierarchy.'''
@@ -289,10 +289,14 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         result = []
         if not self.is_root:
             p = self.parent_project
-            result.append(SitemapEntry('Parent Project'))
-            result.append(SitemapEntry(p.name or p.script_name, p.script_name))
-        sps = self.direct_subprojects
-        if sps:
+            result.extend(
+                (
+                    SitemapEntry('Parent Project'),
+                    SitemapEntry(p.name or p.script_name, p.script_name),
+                )
+            )
+
+        if sps := self.direct_subprojects:
             result.append(SitemapEntry('Child Projects'))
             result += [
                 SitemapEntry(sp.name or sp.script_name, sp.script_name)
@@ -300,7 +304,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         return result
 
     def troves_by_type(self, trove_type):
-        trove_key = 'trove_%s' % trove_type
+        trove_key = f'trove_{trove_type}'
         troves = getattr(self, trove_key) if hasattr(self, trove_key) else None
         if troves:
             return TroveCategory.query.find({'_id': {'$in': troves}}).all()
@@ -336,31 +340,25 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     @property
     def script_name(self):
         url = self.url()
-        if '//' in url:
-            return url.rsplit('//')[-1]
-        else:
-            return url
+        return url.rsplit('//')[-1] if '//' in url else url
 
     def url(self, use_userproject_shortname=False):
         if self.is_nbhd_project:
             return self.neighborhood.url()
         shortname = self.shortname[len(self.neighborhood.shortname_prefix):]
         if self.neighborhood.url_prefix == '/u/' and not use_userproject_shortname:
-            user = self.user_project_of
-            if user:
+            if user := self.user_project_of:
                 return user.url()
         url = self.neighborhood.url_prefix + shortname + '/'
-        if url.startswith('//'):
-            try:
-                return request.scheme + ':' + url
-            except TypeError:  # pragma no cover
-                return 'http:' + url
-        else:
+        if not url.startswith('//'):
             return url
+        try:
+            return f'{request.scheme}:{url}'
+        except TypeError:  # pragma no cover
+            return f'http:{url}'
 
     def icon_url(self):
-        icon_url = config.get('static.icon_base', '') + self.url() + 'icon'
-        return icon_url
+        return config.get('static.icon_base', '') + self.url() + 'icon'
 
     def best_download_url(self):
         provider = plugin.ProjectRegistrationProvider.get()
@@ -392,7 +390,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             file_sha256 = sha256(file_bytes).hexdigest()
             self.set_tool_data('allura', icon_sha256=file_sha256)
         except Exception as ex:
-            log.exception('Failed to calculate sha256 for icon file for {}'.format(self.shortname))
+            log.exception(f'Failed to calculate sha256 for icon file for {self.shortname}')
 
     @property
     def icon(self):
@@ -402,23 +400,23 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     def icon_sized(self, w):
         allowed_sizes = list(map(int, aslist(config.get('project_icon_sizes', '16 24 32 48 64 72 96'))))
         if w not in allowed_sizes:
-            raise ValueError('Width must be one of {} (see project_icon_sizes in your .ini file)'.format(allowed_sizes))
-        if w == DEFAULT_ICON_WIDTH:
-            icon_cat_name = 'icon'
-        else:
-            icon_cat_name = 'icon-{}'.format(w)
+            raise ValueError(
+                f'Width must be one of {allowed_sizes} (see project_icon_sizes in your .ini file)'
+            )
+
+        icon_cat_name = 'icon' if w == DEFAULT_ICON_WIDTH else f'icon-{w}'
         sized = ProjectFile.query.get(project_id=self._id, category=icon_cat_name)
         if not sized and w != DEFAULT_ICON_WIDTH:
-            orig = self.icon_original
-            if not orig:
+            if orig := self.icon_original:
+                sized = orig.save_thumbnail(filename='',
+                                            image=PIL.Image.open(orig.rfile()),
+                                            content_type=orig.content_type,
+                                            thumbnail_size=(w, w),
+                                            thumbnail_meta=dict(project_id=c.project._id, category=icon_cat_name),
+                                            square=True,
+                                            )
+            else:
                 return self.icon
-            sized = orig.save_thumbnail(filename='',
-                                        image=PIL.Image.open(orig.rfile()),
-                                        content_type=orig.content_type,
-                                        thumbnail_size=(w, w),
-                                        thumbnail_meta=dict(project_id=c.project._id, category=icon_cat_name),
-                                        square=True,
-                                        )
         return sized
 
     @LazyProperty
@@ -427,8 +425,9 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
 
     @LazyProperty
     def icon_max_size(self):
-        stored_original_size = self.get_tool_data('allura', 'icon_original_size')
-        if stored_original_size:
+        if stored_original_size := self.get_tool_data(
+            'allura', 'icon_original_size'
+        ):
             # max not min, since non-square images get white padding added
             return max(stored_original_size)
         elif self.icon:
@@ -446,9 +445,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
 
     @property
     def parent_project(self):
-        if self.is_root:
-            return None
-        return self.query.get(_id=self.parent_id)
+        return None if self.is_root else self.query.get(_id=self.parent_id)
 
     def _get_private(self):
         """Return True if this project is private, else False."""
@@ -484,19 +481,18 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         '''
         If this is a user-project, return the User, else None
         '''
-        user = None
-        if self.is_user_project:
-            user = plugin.AuthenticationProvider.get(request).user_by_project_shortname(
+        return (
+            plugin.AuthenticationProvider.get(request).user_by_project_shortname(
                 self.shortname[2:],  # strip leading u/ prefix
                 include_disabled=include_disabled,
             )
-        return user
+            if self.is_user_project
+            else None
+        )
 
     @LazyProperty
     def root_project(self):
-        if self.is_root:
-            return self
-        return self.parent_project.root_project
+        return self if self.is_root else self.parent_project.root_project
 
     @property
     def category(self):
@@ -505,8 +501,8 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     @classmethod
     def icon_urls(cls, projects):
         '''Return a dict[project_id] = icon_url, efficiently'''
-        project_index = dict((p._id, p) for p in projects)
-        result = dict((p._id, None) for p in projects)
+        project_index = {p._id: p for p in projects}
+        result = {p._id: None for p in projects}
         for icon in ProjectFile.query.find(dict(
                 project_id={'$in': list(result.keys())},
                 category='icon')):
@@ -517,7 +513,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     def accolades_index(cls, projects):
         '''Return a dict[project_id] = list of accolades, efficiently'''
         from .artifact import AwardGrant
-        result = dict((p._id, []) for p in projects)
+        result = {p._id: [] for p in projects}
         for award in AwardGrant.query.find(dict(
                 granted_to_project_id={'$in': list(result.keys())})):
             result[award.granted_to_project_id].append(award)
@@ -600,14 +596,11 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             else:
                 app = App(self, ac)
             if app.is_visible_to(c.user):
-                if xml:
-                    sms = app.sitemap_xml()
-                else:
-                    sms = app.main_menu()
+                sms = app.sitemap_xml() if xml else app.main_menu()
                 for sm in sms:
                     entry = sm.bind_app(app)
                     entry.tool_name = ac.tool_name
-                    entry.ui_icon = 'tool-%s' % entry.tool_name.lower()
+                    entry.ui_icon = f'tool-{entry.tool_name.lower()}'
                     if is_nofollow_url(entry.url):
                         entry.extra_html_attrs.update({'rel': 'nofollow'})
                     if not self.is_nbhd_project and (entry.tool_name.lower() in list(anchored_tools.keys())):
@@ -617,9 +610,9 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
                         ordinal = 100
                     else:
                         ordinal = int(ac.options.get('ordinal', 0)) + \
-                            delta_ordinal
+                                delta_ordinal
                     if self.is_nbhd_project and entry.label == 'Admin':
-                        entry.matching_urls.append('%s_admin/' % self.url())
+                        entry.matching_urls.append(f'{self.url()}_admin/')
                     if ordinal > max_ordinal:
                         max_ordinal = ordinal
                     entries.append({'ordinal': ordinal, 'entry': entry})
@@ -628,13 +621,17 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         if (not tools_only and
                 self == self.neighborhood.neighborhood_project and
                 h.has_access(self.neighborhood, 'admin')):
-            entries.append({
-                'ordinal': max_ordinal + 1,
-                'entry': SitemapEntry(
-                    'Moderate',
-                    "%s_moderate/" % self.neighborhood.url(),
-                    ui_icon="tool-admin")
-                })
+            entries.append(
+                {
+                    'ordinal': max_ordinal + 1,
+                    'entry': SitemapEntry(
+                        'Moderate',
+                        f"{self.neighborhood.url()}_moderate/",
+                        ui_icon="tool-admin",
+                    ),
+                }
+            )
+
             max_ordinal += 1
 
         entries = sorted(entries, key=lambda e: e['ordinal'])
@@ -643,17 +640,15 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     def install_anchored_tools(self):
         anchored_tools = self.neighborhood.get_anchored_tools()
         installed_tools = [tool.tool_name.lower() for tool in self.app_configs]
-        i = 0
         new_tools = []
         if not self.is_nbhd_project:
-            for tool, label in six.iteritems(anchored_tools):
+            for i, (tool, label) in enumerate(six.iteritems(anchored_tools)):
                 if (tool not in installed_tools) and (self.app_instance(tool) is None):
                     try:
                         new_tools.append(
                             self.install_app(tool, tool, label, i))
                     except Exception:
-                        log.error('%s is not available' % tool, exc_info=True)
-                i += 1
+                        log.error(f'{tool} is not available', exc_info=True)
         return new_tools
 
     def nav_data(self, admin_options=False, navbar_entries=None):
@@ -684,7 +679,14 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
                 except exc.HTTPError:
                     log.debug('Could not get admin_options mount_point for tool: %s', s.url, exc_info=True)
             if admin_options and not s.tool_name:
-                entry['admin_options'] = [dict(text='Subproject Admin', href=s.url + 'admin', className=None)]
+                entry['admin_options'] = [
+                    dict(
+                        text='Subproject Admin',
+                        href=f'{s.url}admin',
+                        className=None,
+                    )
+                ]
+
             return entry
 
         if navbar_entries is None:
@@ -728,47 +730,43 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             if counts.get(tool_name, 1) <= grouping_threshold:
                 # don't need grouping, so just add it directly
                 grouped_nav[id(e)] = e
-            else:
-                # tool of a type we don't have in the navbar yet
-                if tool_name not in grouped_nav:
-                    child = deepcopy(e)
-                    # change label to be the tool name (type)
-                    e.label = g.entry_points['tool'][tool_name].tool_label + ' \u25be'
-                    # add tool url to list of urls that will match this nav entry
-                    # have to do this before changing the url to the list page
-                    e.matching_urls.append(e.url)
-                    # change url to point to tool list page
-                    e.url = self.url() + '_list/' + tool_name
+            elif tool_name in grouped_nav:
+                # add tool url to list of urls that will match this nav
+                # entry
+                grouped_nav[tool_name].matching_urls.append(e.url)
+                if len(grouped_nav[tool_name].children) < SITEMAP_PER_TOOL_LIMIT - 1:
+                    grouped_nav[tool_name].children.append(e)
+                elif len(grouped_nav[tool_name].children) == SITEMAP_PER_TOOL_LIMIT - 1:
+                    e.url = f'{self.url()}_list/{tool_name}'
+                    e.label = 'More...'
                     e.mount_point = None
-                    e.children.append(child)
-                    grouped_nav[tool_name] = e
-                else:
-                    # add tool url to list of urls that will match this nav
-                    # entry
-                    grouped_nav[tool_name].matching_urls.append(e.url)
-                    if len(grouped_nav[tool_name].children) < SITEMAP_PER_TOOL_LIMIT - 1:
-                        grouped_nav[tool_name].children.append(e)
-                    elif len(grouped_nav[tool_name].children) == SITEMAP_PER_TOOL_LIMIT - 1:
-                        e.url = self.url() + '_list/' + tool_name
-                        e.label = 'More...'
-                        e.mount_point = None
-                        e.extra_html_attrs = {}
-                        grouped_nav[tool_name].children.append(e)
+                    e.extra_html_attrs = {}
+                    grouped_nav[tool_name].children.append(e)
+            else:
+                child = deepcopy(e)
+                # change label to be the tool name (type)
+                e.label = g.entry_points['tool'][tool_name].tool_label + ' \u25be'
+                # add tool url to list of urls that will match this nav entry
+                # have to do this before changing the url to the list page
+                e.matching_urls.append(e.url)
+                    # change url to point to tool list page
+                e.url = f'{self.url()}_list/{tool_name}'
+                e.mount_point = None
+                e.children.append(child)
+                grouped_nav[tool_name] = e
         return list(grouped_nav.values())
 
     def parent_iter(self):
         yield self
-        pp = self.parent_project
-        if pp:
-            for p in pp.parent_iter():
-                yield p
+        if pp := self.parent_project:
+            yield from pp.parent_iter()
 
     @property
     def subprojects(self):
         q = self.query.find(dict(shortname={'$gt': self.shortname},
                                  neighborhood_id=self.neighborhood._id)).sort('shortname')
         for project in q:
-            if project.shortname.startswith(self.shortname + '/'):
+            if project.shortname.startswith(f'{self.shortname}/'):
                 yield project
             else:
                 break
@@ -786,10 +784,10 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
     def named_roles(self):
         roles_ids = [r['_id']
                      for r in g.credentials.project_roles(self.root_project._id).named]
-        roles = sorted(
+        return sorted(
             ProjectRole.query.find({'_id': {'$in': roles_ids}}),
-            key=lambda r: r.name.lower())
-        return roles
+            key=lambda r: r.name.lower(),
+        )
 
     def install_apps(self, apps_params):
         """ Install many apps at once.
@@ -802,7 +800,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         """
 
         # determine all the mount points
-        mount_points = dict()
+        mount_points = {}
         for app_params in apps_params:
             App = g.entry_points['tool'][app_params['ep_name']]
             mount_point = self._mount_point_for_install(App, app_params.get('mount_point'))
@@ -831,7 +829,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         try:
             return opt.validate(value)
         except fe.Invalid as e:
-            raise exceptions.ToolError('{}: {}'.format(opt.name, str(e)))
+            raise exceptions.ToolError(f'{opt.name}: {str(e)}')
 
     def last_ordinal_value(self):
         last_menu_item = self.ordered_mounts(include_hidden=True)[-1]
@@ -902,10 +900,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         if app_config is None:
             return None
         App = app_config.load()
-        if App is None:  # pragma no cover
-            return None
-        else:
-            return App(self, app_config)
+        return None if App is None else App(self, app_config)
 
     def app_config(self, mount_point):
         return AppConfig.query.find({
@@ -931,14 +926,15 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         Returns an array of a projects mounts (tools and sub-projects) in toolbar order.
         Note that the top-level 'ordinal' field may be offset from the stored ordinal value, due to anchored tools
         '''
-        result = []
         anchored_tools = self.neighborhood.get_anchored_tools()
         i = len(anchored_tools)
         self.install_anchored_tools()
 
-        for sub in self.direct_subprojects:
-            result.append(
-                {'ordinal': int(sub.ordinal + i), 'sub': sub})
+        result = [
+            {'ordinal': int(sub.ordinal + i), 'sub': sub}
+            for sub in self.direct_subprojects
+        ]
+
         for ac in self.app_configs:
             App = g.entry_points['tool'].get(ac.tool_name)
             if include_hidden or App and not App.hidden:
@@ -1022,10 +1018,10 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             return None
         named_roles = g.credentials.project_roles(
             project_id=self.root_project._id).named
-        for r in named_roles.roles_that_reach:
-            if r.get('user_id') == u._id:
-                return u
-        return None
+        return next(
+            (u for r in named_roles.roles_that_reach if r.get('user_id') == u._id),
+            None,
+        )
 
     def configure_project(
             self,
@@ -1108,8 +1104,7 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             return account
 
     def set_social_account(self, socialnetwork, accounturl):
-        account = self.social_account(socialnetwork)
-        if account:
+        if account := self.social_account(socialnetwork):
             account.accounturl = accounturl
         else:
             self.socialnetworks.append(dict(
@@ -1143,11 +1138,8 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
         shortname = self.shortname
         if self.is_nbhd_project:
             shortname = self.url().strip('/')
-        elif self.is_user_project:
+        elif self.is_user_project or not self.is_root:
             shortname = self.shortname.split('/')[1]
-        elif not self.is_root:
-            shortname = self.shortname.split('/')[1]
-
         filename_format = config['bulk_export_filename']
         if six.PY2:
             # in py3 ConfigParser requires %% to escape literal "%"
@@ -1165,42 +1157,49 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             'state': {'$in': ['busy', 'ready']},
             'context.project_id': self._id,
         }
-        export_task = MonQTask.query.get(**q)
-        if not export_task:
-            return
-        else:
+        if export_task := MonQTask.query.get(**q):
             return 'busy'
+        else:
+            return
 
     def index(self):
         provider = plugin.ProjectRegistrationProvider.get()
         try:
             _private = self.private
         except Exception:
-            log.warn('Error getting self.private on project {}'.format(self.shortname), exc_info=True)
+            log.warn(
+                f'Error getting self.private on project {self.shortname}',
+                exc_info=True,
+            )
+
             _private = False
-        fields = dict(id=self.index_id(),
-                      title='Project %s' % self.name,
-                      type_s=self.type_s,
-                      deleted_b=self.deleted,
-                      # Not analyzed fields
-                      private_b=_private,
-                      neighborhood_id_s=str(self.neighborhood_id),
-                      url_s=self.url(),
-                      is_root_b=self.is_root,
-                      is_nbhd_project_b=self.is_nbhd_project,
-                      registration_dt=plugin.ProjectRegistrationProvider.get().registration_date(self),
-                      removal_changed_date_dt=self.removal_changed_date,
-                      name_t=self.name,
-                      shortname_s=self.shortname,
-                      neighborhood_name_s=self.neighborhood.name,
-                      external_homepage_s=self.external_homepage,
-                      # Analyzed fields
-                      short_description_t=self.short_description,
-                      labels_t=' '.join(self.labels),
-                      summary_t=self.summary,
-                      category_name_t=self.category.name if self.category else None,
-                      category_description_t=self.category.description if self.category else None,
-                      )
+        fields = dict(
+            id=self.index_id(),
+            title=f'Project {self.name}',
+            type_s=self.type_s,
+            deleted_b=self.deleted,
+            private_b=_private,
+            neighborhood_id_s=str(self.neighborhood_id),
+            url_s=self.url(),
+            is_root_b=self.is_root,
+            is_nbhd_project_b=self.is_nbhd_project,
+            registration_dt=plugin.ProjectRegistrationProvider.get().registration_date(
+                self
+            ),
+            removal_changed_date_dt=self.removal_changed_date,
+            name_t=self.name,
+            shortname_s=self.shortname,
+            neighborhood_name_s=self.neighborhood.name,
+            external_homepage_s=self.external_homepage,
+            short_description_t=self.short_description,
+            labels_t=' '.join(self.labels),
+            summary_t=self.summary,
+            category_name_t=self.category.name if self.category else None,
+            category_description_t=self.category.description
+            if self.category
+            else None,
+        )
+
         return dict(provider.index_project(self), **fields)
 
     def should_update_index(self, old_doc, new_doc):
@@ -1222,7 +1221,9 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             url=h.absurl(self.url()),
             private=self.private,
             short_description=self.short_description,
-            creation_date=plugin.ProjectRegistrationProvider.get().registration_date(self).strftime('%Y-%m-%d'),
+            creation_date=plugin.ProjectRegistrationProvider.get()
+            .registration_date(self)
+            .strftime('%Y-%m-%d'),
             summary=self.summary,
             external_homepage=self.external_homepage,
             video_url=self.video_url,
@@ -1231,27 +1232,42 @@ class Project(SearchIndexable, MappedClass, ActivityNode, ActivityObject):
             moved_to_url=self.moved_to_url,
             preferred_support_tool=self.support_page,
             preferred_support_url=self.support_page_url,
-            developers=[u.__json__()
-                        for u in self.users_with_role('Developer')],
-            tools=[self.app_instance(t) for t in self.app_configs if h.has_access(t, 'read')],
+            developers=[u.__json__() for u in self.users_with_role('Developer')],
+            tools=[
+                self.app_instance(t)
+                for t in self.app_configs
+                if h.has_access(t, 'read')
+            ],
             labels=list(self.labels),
-            categories={n: [t.__json__() for t in ts]
-                        for n, ts in self.all_troves().items()},
-            icon_url=h.absurl(self.url() + 'icon') if self.icon else None,
+            categories={
+                n: [t.__json__() for t in ts]
+                for n, ts in self.all_troves().items()
+            },
+            icon_url=h.absurl(f'{self.url()}icon') if self.icon else None,
             screenshots=[
                 dict(
-                    url=h.absurl(self.url() + 'screenshot/' +
-                                 six.moves.urllib.parse.quote(ss.filename.encode('utf8'))),
+                    url=h.absurl(
+                        (
+                            f'{self.url()}screenshot/'
+                            + six.moves.urllib.parse.quote(
+                                ss.filename.encode('utf8')
+                            )
+                        )
+                    ),
                     thumbnail_url=h.absurl(
-                        self.url(
-                        ) + 'screenshot/' + six.moves.urllib.parse.quote(ss.filename.encode('utf8')) + '/thumb'),
+                        self.url()
+                        + 'screenshot/'
+                        + six.moves.urllib.parse.quote(ss.filename.encode('utf8'))
+                        + '/thumb'
+                    ),
                     caption=ss.caption,
                 )
                 for ss in self.get_screenshots()
-            ]
+            ],
         )
+
         if self.is_user_project:
-            result['profile_api_url'] = h.absurl('/rest' + self.url() + 'profile/')
+            result['profile_api_url'] = h.absurl(f'/rest{self.url()}profile/')
         return result
 
     def doap(self):

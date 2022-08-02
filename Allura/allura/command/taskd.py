@@ -71,7 +71,7 @@ class TaskdCommand(base.Command):
         self.basic_setup()
         self.keep_running = True
         self.restart_when_done = False
-        base.log.info('Starting taskd, pid %s' % os.getpid())
+        base.log.info(f'Starting taskd, pid {os.getpid()}')
         signal.signal(signal.SIGHUP, self.graceful_restart)
         signal.signal(signal.SIGTERM, self.graceful_stop)
         signal.signal(signal.SIGUSR1, self.log_current_task)
@@ -85,28 +85,29 @@ class TaskdCommand(base.Command):
 
     def graceful_restart(self, signum, frame):
         base.log.info(
-            'taskd pid %s recieved signal %s preparing to do a graceful restart' %
-            (os.getpid(), signum))
+            f'taskd pid {os.getpid()} recieved signal {signum} preparing to do a graceful restart'
+        )
+
         self.keep_running = False
         self.restart_when_done = True
 
     def graceful_stop(self, signum, frame):
         base.log.info(
-            'taskd pid %s recieved signal %s preparing to do a graceful stop' %
-            (os.getpid(), signum))
+            f'taskd pid {os.getpid()} recieved signal {signum} preparing to do a graceful stop'
+        )
+
         self.keep_running = False
 
     def log_current_task(self, signum, frame):
-        entry = 'taskd pid %s is currently handling task %s' % (
-            os.getpid(), getattr(self, 'task', None))
+        entry = f"taskd pid {os.getpid()} is currently handling task {getattr(self, 'task', None)}"
+
         status_log.info(entry)
         base.log.info(entry)
 
     def worker(self):
         from allura import model as M
-        name = '%s pid %s' % (os.uname()[1], os.getpid())
-        wsgi_app = loadapp('config:%s#task' %
-                           self.args[0], relative_to=os.getcwd())
+        name = f'{os.uname()[1]} pid {os.getpid()}'
+        wsgi_app = loadapp(f'config:{self.args[0]}#task', relative_to=os.getcwd())
         poll_interval = asint(tg.config.get('monq.poll_interval', 10))
         only = self.options.only
         if only:
@@ -139,11 +140,10 @@ class TaskdCommand(base.Command):
                         waitfunc=waitfunc,
                         only=only)
                     if self.task:
-                        with(proctitle("taskd:{0}:{1}".format(
-                                self.task.task_name, self.task._id))):
+                        with (proctitle("taskd:{0}:{1}".format(
+                                                    self.task.task_name, self.task._id))):
                             # Build the (fake) request
-                            request_path = '/--%s--/%s/' % (self.task.task_name,
-                                                            self.task._id)
+                            request_path = f'/--{self.task.task_name}--/{self.task._id}/'
                             r = Request.blank(request_path,
                                               base_url=tg.config['base_url'].rstrip(
                                                   '/') + request_path,
@@ -155,14 +155,16 @@ class TaskdCommand(base.Command):
             except Exception as e:
                 if self.keep_running:
                     base.log.exception(
-                        'taskd error %s; pausing for 10s before taking more tasks' % e)
+                        f'taskd error {e}; pausing for 10s before taking more tasks'
+                    )
+
                     time.sleep(10)
                 else:
-                    base.log.exception('taskd error %s' % e)
-        base.log.info('taskd pid %s stopping gracefully.' % os.getpid())
+                    base.log.exception(f'taskd error {e}')
+        base.log.info(f'taskd pid {os.getpid()} stopping gracefully.')
 
         if self.restart_when_done:
-            base.log.info('taskd pid %s restarting itself' % os.getpid())
+            base.log.info(f'taskd pid {os.getpid()} restarting itself')
             os.execv(sys.argv[0], sys.argv)
 
 
@@ -229,7 +231,7 @@ class TaskCommand(base.Command):
 
     def _add_filters(self, q):
         if self.options.filter_name_prefix:
-            q['task_name'] = {'$regex': r'^{}.*'.format(re.escape(self.options.filter_name_prefix))}
+            q['task_name'] = {'$regex': f'^{re.escape(self.options.filter_name_prefix)}.*'}
         if self.options.filter_result_regex:
             q['result'] = {'$regex': self.options.filter_result_regex}
         if self.options.days_ago:
@@ -239,7 +241,7 @@ class TaskCommand(base.Command):
         return q
 
     def _print_query(self, cmd, *args):
-        print('running mongod cmd: %s, %s' % (cmd, args))
+        print(f'running mongod cmd: {cmd}, {args}')
 
     def _list(self):
         '''List tasks'''
@@ -261,7 +263,7 @@ class TaskCommand(base.Command):
         q = self._add_filters(q)
         self._print_query('find', q)
         count = M.MonQTask.query.find(q).count()
-        print('Task Count %s' % count)
+        print(f'Task Count {count}')
 
     def _retry(self):
         '''Retry tasks in an error state'''

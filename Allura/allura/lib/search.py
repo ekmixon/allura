@@ -53,10 +53,7 @@ class SearchIndexable(object):
 
         Used for SOLR ID, shortlinks, and possibly elsewhere.
         """
-        id = '%s.%s#%s' % (
-            self.__class__.__module__,
-            self.__class__.__name__,
-            self._id)
+        id = f'{self.__class__.__module__}.{self.__class__.__name__}#{self._id}'
         return id.replace('.', '/')
 
     def index(self):
@@ -122,7 +119,7 @@ class SearchIndexable(object):
         for f in fields:
             if '_' in f:
                 base, typ = f.rsplit('_', 1)
-                q = q.replace(base + ':', f + ':')
+                q = q.replace(f'{base}:', f'{f}:')
         return q
 
 
@@ -148,8 +145,7 @@ def search(q, short_timeout=False, ignore_errors=True, **kw):
         log.exception('Error in solr search')
         if not ignore_errors:
             match = re.search(r'<pre>(.*)</pre>', six.text_type(e))
-            raise SearchError('Error running search query: %s' %
-                              (match.group(1) if match else e))
+            raise SearchError(f'Error running search query: {match[1] if match else e}')
 
 
 def search_artifact(atype, q, history=False, rows=10, short_timeout=False, filter=None, **kw):
@@ -162,29 +158,29 @@ def search_artifact(atype, q, history=False, rows=10, short_timeout=False, filte
     if a is None:
         return  # if there are no instance of atype, we won't find anything
     fields = a.index()
-    fq = ['type_s:%s' % fields['type_s']]
+    fq = [f"type_s:{fields['type_s']}"]
     # Now, we'll translate all the fld:
     if c.app is not None:
         q = atype.translate_query(q, fields)
-        fq.append('mount_point_s:%s' % c.app.config.options.mount_point)
+        fq.append(f'mount_point_s:{c.app.config.options.mount_point}')
     else:
         q = SearchIndexable.translate_query(q, fields)
 
     if c.project is not None:
-        fq.append('project_id_s:%s' % c.project._id)
+        fq.append(f'project_id_s:{c.project._id}')
 
     fq += kw.pop('fq', [])
     if isinstance(filter, six.string_types):  # may be stringified after a ticket filter, then bulk edit
         filter = ast.literal_eval(filter)
     for name, values in six.iteritems((filter or {})):
-        field_name = name + '_s'
+        field_name = f'{name}_s'
         parts = []
         for v in values:
             # Specific solr syntax for empty fields
             if v == '' or v is None:
-                part = '(-%s:[* TO *] AND *:*)' % (field_name,)
+                part = f'(-{field_name}:[* TO *] AND *:*)'
             else:
-                part = '%s:%s' % (field_name, escape_solr_arg(v))
+                part = f'{field_name}:{escape_solr_arg(v)}'
             parts.append(part)
         fq.append(' OR '.join(parts))
     if not history:
@@ -211,9 +207,9 @@ def site_admin_search(model, q, field, **kw):
         # escaping spaces with '\ ' isn't sufficient for display_name_t since its stored as text_general (why??)
         # and wouldn't handle foo@bar.com split on @ either
         # This should work, but doesn't for unknown reasons: q = u'{!term f=%s}%s' % (field, q)
-        q = obj.translate_query('%s:(%s)' % (field, q), fields)
+        q = obj.translate_query(f'{field}:({q})', fields)
         kw['q.op'] = 'AND'  # so that all terms within the () are required
-    fq = ['type_s:%s' % model.type_s]
+    fq = [f'type_s:{model.type_s}']
     return search(q, fq=fq, ignore_errors=False, **kw)
 
 
@@ -229,8 +225,13 @@ def search_app(q='', fq=None, app=True, **kw):
     if app and kw.pop('project', False):
         # Used from app's search controller. If `project` is True, redirect to
         # 'entire project search' page
-        redirect(c.project.url() + 'search/?' +
-                 urlencode(dict(q=q, history=history)))
+        redirect(
+            (
+                f'{c.project.url()}search/?'
+                + urlencode(dict(q=q, history=history))
+            )
+        )
+
     search_comments = kw.pop('search_comments', None)
     limit = kw.pop('limit', None)
     page = kw.pop('page', 0)
@@ -238,7 +239,7 @@ def search_app(q='', fq=None, app=True, **kw):
     allowed_types = kw.pop('allowed_types', [])
     parser = kw.pop('parser', None)
     sort = kw.pop('sort', 'score desc')
-    fq = fq if fq else []
+    fq = fq or []
     search_error = None
     results = []
     count = 0
@@ -254,12 +255,13 @@ def search_app(q='', fq=None, app=True, **kw):
             allowed_types += ['Post']
         if app:
             fq = [
-                'project_id_s:%s' % c.project._id,
-                'mount_point_s:%s' % c.app.config.options.mount_point,
+                f'project_id_s:{c.project._id}',
+                f'mount_point_s:{c.app.config.options.mount_point}',
                 '-deleted_b:true',
-                'type_s:(%s)' % ' OR '.join(
-                    ['"%s"' % t for t in allowed_types])
+                'type_s:(%s)'
+                % ' OR '.join(['"%s"' % t for t in allowed_types]),
             ] + fq
+
         search_params = {
             'qt': 'dismax',
             'qf': 'title^2 text',
@@ -287,10 +289,10 @@ def search_app(q='', fq=None, app=True, **kw):
             matches = results.highlighting
 
             def historize_urls(doc):
-                if doc.get('type_s', '').endswith(' Snapshot'):
-                    if doc.get('url_s'):
-                        doc['url_s'] = doc['url_s'] + \
-                            '?version=%s' % doc.get('version_i')
+                if doc.get('type_s', '').endswith(' Snapshot') and doc.get(
+                    'url_s'
+                ):
+                    doc['url_s'] = (doc['url_s'] + f"?version={doc.get('version_i')}")
                 return doc
 
             def add_matches(doc):
@@ -391,7 +393,4 @@ def mapped_artifacts_from_index_ids(index_ids, model, objectid_id=True):
     :rtype: dict
     '''
     models = artifacts_from_index_ids(index_ids, model, objectid_id=objectid_id)
-    map = {}
-    for m in models:
-        map[str(m._id)] = m
-    return map
+    return {str(m._id): m for m in models}

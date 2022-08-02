@@ -78,9 +78,8 @@ class RepoRootController(BaseController, FeedController):
     def get_feed(self, project, app, user):
         query = dict(project_id=project._id, app_config_id=app.config._id)
         pname, repo = (project.shortname, app.config.options.mount_label)
-        title = '%s %s changes' % (pname, repo)
-        description = 'Recent changes to %s repository in %s project' % (
-            repo, pname)
+        title = f'{pname} {repo} changes'
+        description = f'Recent changes to {repo} repository in {pname} project'
         return FeedArgs(query, title, app.url, description=description)
 
     def _check_security(self):
@@ -101,21 +100,22 @@ class RepoRootController(BaseController, FeedController):
         if c.app.repo.forks:
             for f in c.app.repo.forks:
                 repo_path_parts = f.url().strip('/').split('/')
-                links.append(dict(
-                    repo_url=f.url(),
-                    repo='%s / %s' % (repo_path_parts[1],
-                                      repo_path_parts[-1]),
-                ))
+                links.append(
+                    dict(
+                        repo_url=f.url(),
+                        repo=f'{repo_path_parts[1]} / {repo_path_parts[-1]}',
+                    )
+                )
+
         return dict(links=links)
 
     @expose()
     def refresh(self, **kw):
         allura.tasks.repo_tasks.refresh.post()
-        if request.referer:
-            flash('Repository is being refreshed')
-            redirect(six.ensure_text(request.referer or '/'))
-        else:
+        if not request.referer:
             return '%r refresh queued.\n' % c.app.repo
+        flash('Repository is being refreshed')
+        redirect(six.ensure_text(request.referer or '/'))
 
     @with_trailing_slash
     @expose('jinja:allura:templates/repo/fork.html')
@@ -129,32 +129,33 @@ class RepoRootController(BaseController, FeedController):
         ThreadLocalORMSession.close_all()
         from_project = c.project
         to_project = M.Project.query.get(_id=ObjectId(project_id))
-        mount_label = mount_label or '%s - %s' % (c.project.name,
-                                                  c.app.config.options.mount_label)
+        mount_label = (
+            mount_label or f'{c.project.name} - {c.app.config.options.mount_label}'
+        )
+
         mount_point = (mount_point or from_project.shortname)
         if request.method != 'POST' or not mount_point:
             return dict(from_repo=from_repo,
                         user_project=c.user.private_project(),
                         mount_point=mount_point,
                         mount_label=mount_label)
-        else:
-            with h.push_config(c, project=to_project):
-                if not to_project.database_configured:
-                    to_project.configure_project(is_user_project=True)
-                require_access(to_project, 'admin')
-                try:
-                    to_project.install_app(
-                        ep_name=from_repo.tool_name,
-                        mount_point=mount_point,
-                        mount_label=mount_label,
-                        cloned_from_project_id=from_project._id,
-                        cloned_from_repo_id=from_repo._id)
-                    redirect(to_project.url() + mount_point + '/')
-                except exc.HTTPRedirection:
-                    raise
-                except Exception as ex:
-                    flash(str(ex), 'error')
-                    redirect(six.ensure_text(request.referer or '/'))
+        with h.push_config(c, project=to_project):
+            if not to_project.database_configured:
+                to_project.configure_project(is_user_project=True)
+            require_access(to_project, 'admin')
+            try:
+                to_project.install_app(
+                    ep_name=from_repo.tool_name,
+                    mount_point=mount_point,
+                    mount_label=mount_label,
+                    cloned_from_project_id=from_project._id,
+                    cloned_from_repo_id=from_repo._id)
+                redirect(to_project.url() + mount_point + '/')
+            except exc.HTTPRedirection:
+                raise
+            except Exception as ex:
+                flash(str(ex), 'error')
+                redirect(six.ensure_text(request.referer or '/'))
 
     @property
     def mr_widget(self):
@@ -281,8 +282,7 @@ class RepoRootController(BaseController, FeedController):
                 continue
             ci = commits_by_id[oid]
             url = c.app.repo.url_for_commit(Object(_id=oid))
-            msg_split = ci.message.splitlines()
-            if msg_split:
+            if msg_split := ci.message.splitlines():
                 msg = h.hide_private_info(msg_split[0])
             else:
                 msg = "No commit message."
@@ -396,8 +396,7 @@ class MergeRequestController(object):
         with self.req.push_downstream_context():
             downstream_app = c.app
 
-        tool_subscribed = M.Mailbox.subscribed()
-        if tool_subscribed:
+        if tool_subscribed := M.Mailbox.subscribed():
             subscribed = False
         else:
             subscribed = M.Mailbox.subscribed(artifact=self.req)
@@ -646,7 +645,7 @@ class BranchBrowser(BaseController):
     @with_trailing_slash
     def log(self, **kw):
         ci = c.app.repo.commit(self._branch)
-        redirect(ci.url() + 'log/')
+        redirect(f'{ci.url()}log/')
 
 
 class CommitBrowser(BaseController):
@@ -675,7 +674,7 @@ class CommitBrowser(BaseController):
         c.page_list = self.page_list
         result = dict(commit=self._commit)
         if self._commit:
-            result.update(self._commit.context())
+            result |= self._commit.context()
         tree = self._commit.tree
         limit, page, start = g.handle_paging(limit, page,
                                              default=self.DEFAULT_PAGE_LIMIT)
@@ -683,10 +682,7 @@ class CommitBrowser(BaseController):
         result['artifacts'] = []
         for t in ('added', 'removed', 'changed', 'copied', 'renamed'):
             for f in diffs[t]:
-                if t in ('copied', 'renamed'):
-                    filepath = f['new']
-                else:
-                    filepath = f
+                filepath = f['new'] if t in ('copied', 'renamed') else f
                 is_text = filepath and tree.get_blob_by_path(filepath) and tree.get_blob_by_path(filepath).has_html_view
                 result['artifacts'].append(
                     (t, f, 'blob' if tree.get_blob_by_path(f) else 'tree', is_text)
@@ -708,7 +704,7 @@ class CommitBrowser(BaseController):
         c.revision_widget = self.revision_widget
         result = dict(commit=self._commit)
         if self._commit:
-            result.update(self._commit.context())
+            result |= self._commit.context()
         return result
 
     @expose('jinja:allura:templates/repo/tarball.html')
@@ -737,18 +733,14 @@ class CommitBrowser(BaseController):
     def log(self, limit=0, path=None, **kw):
         if not limit:
             limit = int(tg.config.get('scm.view.log.limit', 25))
-        is_file = False
-        if path:
-            is_file = c.app.repo.is_file(path, self._commit._id)
+        is_file = c.app.repo.is_file(path, self._commit._id) if path else False
         limit, _ = h.paging_sanitizer(limit, 0)
         commits = list(c.app.repo.log(
             revs=self._commit._id,
             path=path,
             id_only=False,
             limit=limit + 1))  # get an extra one to check for a next commit
-        next_commit = None
-        if len(commits) > limit:
-            next_commit = commits.pop()
+        next_commit = commits.pop() if len(commits) > limit else None
         c.log_widget = self.log_widget
         return dict(
             username=c.user._id and c.user.username,
@@ -780,10 +772,10 @@ class TreeBrowser(BaseController, DispatchIndex):
         tool_subscribed = M.Mailbox.subscribed()
         tarball_url = None
         if asbool(tg.config.get('scm.repos.tarball.enable', False)):
-            cutout = len('tree' + self._path)
+            cutout = len(f'tree{self._path}')
             if request.path.endswith('/') and not self._path.endswith('/'):
                 cutout += 1
-            tarball_url = h.urlquote(request.path_info[:-cutout] + 'tarball')
+            tarball_url = h.urlquote(f'{request.path_info[:-cutout]}tarball')
         return dict(
             repo=c.app.repo,
             commit=self._commit,
@@ -797,9 +789,7 @@ class TreeBrowser(BaseController, DispatchIndex):
     def _lookup(self, next, *rest):
         next = h.really_unicode(unquote(next))
         if not rest:
-            # Might be a file rather than a dir
-            filename = h.really_unicode(request.path_info.rsplit(str('/'))[-1])
-            if filename:
+            if filename := h.really_unicode(request.path_info.rsplit('/')[-1]):
                 try:
                     obj = self._tree[filename]
                 except KeyError:
@@ -810,16 +800,12 @@ class TreeBrowser(BaseController, DispatchIndex):
                         self._tree,
                         filename), rest
         elif rest == ('index', ):
-            rest = (request.path_info.rsplit(str('/'))[-1],)
+            rest = (request.path_info.rsplit('/')[-1], )
         try:
             tree = self._tree[next]
         except KeyError:
             raise exc.HTTPNotFound
-        return self.__class__(
-            self._commit,
-            tree,
-            self._path + '/' + next,
-            self), rest
+        return self.__class__(self._commit, tree, f'{self._path}/{next}', self), rest
 
     @expose('json:')
     @require_post()
@@ -846,13 +832,18 @@ class FileBrowser(BaseController):
     @expose('jinja:allura:templates/repo/file.html')
     def index(self, **kw):
         if kw.pop('format', 'html') == 'raw':
-            if self._blob.size > asint(tg.config.get('scm.download.max_file_bytes', 30*1000*1000)):
-                large_size = self._blob.size
-                flash('File is {}.  Too large to download.'.format(h.do_filesizeformat(large_size)),
-                      'warning', sticky=True)
-                raise exc.HTTPForbidden
-            else:
+            if self._blob.size <= asint(
+                tg.config.get('scm.download.max_file_bytes', 30 * 1000 * 1000)
+            ):
                 return self.raw()
+            large_size = self._blob.size
+            flash(
+                f'File is {h.do_filesizeformat(large_size)}.  Too large to download.',
+                'warning',
+                sticky=True,
+            )
+
+            raise exc.HTTPForbidden
         elif 'diff' in kw:
             tg.decorators.override_template(
                 self.index, 'jinja:allura:templates/repo/diff.html')
@@ -879,15 +870,17 @@ class FileBrowser(BaseController):
     def raw(self, **kw):
         content_type = self._blob.content_type
         filename = self._blob.name
-        response.headers['Content-Type'] = str('')
+        response.headers['Content-Type'] = ''
         response.content_type = str(content_type)
         if self._blob.content_encoding is not None:
             content_encoding = self._blob.content_encoding
-            response.headers['Content-Encoding'] = str('')
+            response.headers['Content-Encoding'] = ''
             response.content_encoding = str(content_encoding)
         response.headers.add(
-            str('Content-Disposition'),
-            str('attachment;filename="%s"') % h.urlquote(filename))
+            'Content-Disposition',
+            'attachment;filename="%s"' % h.urlquote(filename),
+        )
+
         return iter(self._blob)
 
     def diff(self, prev_commit, fmt=None, prev_file=None, **kw):
@@ -916,8 +909,8 @@ class FileBrowser(BaseController):
         # py2 unified_diff can handle some unicode but not consistently, so best to do ensure_str (can drop it on py3)
         la = [six.ensure_str(h.really_unicode(line)) for line in a]
         lb = [six.ensure_str(h.really_unicode(line)) for line in b]
-        adesc = 'a' + h.really_unicode(apath)
-        bdesc = 'b' + h.really_unicode(b.path())
+        adesc = f'a{h.really_unicode(apath)}'
+        bdesc = f'b{h.really_unicode(b.path())}'
 
         if not fmt:
             fmt = web_session.get('diformat', '')
@@ -935,7 +928,12 @@ class FileBrowser(BaseController):
         else:
             # py2 unified_diff can handle some unicode but not consistently, so best to do str() and ensure_str()
             # (can drop it on py3)
-            diff = str('').join(difflib.unified_diff(la, lb, six.ensure_str(adesc), six.ensure_str(bdesc)))
+            diff = ''.join(
+                difflib.unified_diff(
+                    la, lb, six.ensure_str(adesc), six.ensure_str(bdesc)
+                )
+            )
+
         return dict(a=a, b=b, diff=diff)
 
 

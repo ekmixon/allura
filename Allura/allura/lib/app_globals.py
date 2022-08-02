@@ -83,7 +83,7 @@ class ForgeMarkdown(markdown.Markdown):
             # so we return it as a plain text
             log.info('Text is too big. Skipping markdown processing')
             escaped = cgi.escape(h.really_unicode(source))
-            return Markup('<pre>%s</pre>' % escaped)
+            return Markup(f'<pre>{escaped}</pre>')
         try:
             return markdown.Markdown.convert(self, source)
         except Exception:
@@ -103,7 +103,7 @@ class ForgeMarkdown(markdown.Markdown):
         # Check if contents macro and never cache
         if "[[" in source_text:
             return self.convert(source_text)
-        cache_field_name = field_name + '_cache'
+        cache_field_name = f'{field_name}_cache'
         cache = getattr(artifact, cache_field_name, None)
         if not cache:
             log.warn(
@@ -146,7 +146,7 @@ class ForgeMarkdown(markdown.Markdown):
                 log.exception('Could not get session for %s', artifact)
             else:
                 with utils.skip_mod_date(artifact.__class__), \
-                     utils.skip_last_updated(artifact.__class__):
+                         utils.skip_last_updated(artifact.__class__):
                     sess.flush(artifact)
         return html
 
@@ -323,30 +323,29 @@ class Globals(object):
         """Return activitystream director"""
         if asbool(config.get('activitystream.recording.enabled', False)):
             return activitystream.director()
-        else:
-            class NullActivityStreamDirector(object):
+        class NullActivityStreamDirector(object):
 
-                def connect(self, *a, **kw):
-                    pass
+            def connect(self, *a, **kw):
+                pass
 
-                def disconnect(self, *a, **kw):
-                    pass
+            def disconnect(self, *a, **kw):
+                pass
 
-                def is_connected(self, *a, **kw):
-                    return False
+            def is_connected(self, *a, **kw):
+                return False
 
-                def create_activity(self, *a, **kw):
-                    pass
+            def create_activity(self, *a, **kw):
+                pass
 
-                def create_timeline(self, *a, **kw):
-                    pass
+            def create_timeline(self, *a, **kw):
+                pass
 
-                def create_timelines(self, *a, **kw):
-                    pass
+            def create_timelines(self, *a, **kw):
+                pass
 
-                def get_timeline(self, *a, **kw):
-                    return []
-            return NullActivityStreamDirector()
+            def get_timeline(self, *a, **kw):
+                return []
+        return NullActivityStreamDirector()
 
     def post_event(self, topic, *args, **kwargs):
         if 'flush_immediately' not in kwargs:
@@ -355,14 +354,8 @@ class Globals(object):
             except AttributeError:
                 script_without_ming_middleware = True
             else:
-                script_without_ming_middleware = env['PATH_INFO'] == str('--script--')
-            if script_without_ming_middleware:
-                kwargs['flush_immediately'] = True
-            else:
-                # within tasks and web requests, ming middleware will flush everything to mongo
-                # so best to *not* flush immediately and let all db writes happen in order
-                # so there's no chance of an event being created and started while the initiating code is still running
-                kwargs['flush_immediately'] = False
+                script_without_ming_middleware = env['PATH_INFO'] == '--script--'
+            kwargs['flush_immediately'] = script_without_ming_middleware
         allura.tasks.event_tasks.event.post(topic, *args, **kwargs)
 
     @LazyProperty
@@ -406,13 +399,13 @@ class Globals(object):
     def document_class(self, neighborhood):
         classes = ''
         if neighborhood:
-            classes += ' neighborhood-%s' % neighborhood.name
+            classes += f' neighborhood-{neighborhood.name}'
         if not neighborhood and c.project:
-            classes += ' neighborhood-%s' % c.project.neighborhood.name
+            classes += f' neighborhood-{c.project.neighborhood.name}'
         if c.project:
-            classes += ' project-%s' % c.project.shortname
+            classes += f' project-{c.project.shortname}'
         if c.app:
-            classes += ' mountpoint-%s' % c.app.config.options.mount_point
+            classes += f' mountpoint-{c.app.config.options.mount_point}'
         return classes
 
     def highlight(self, text, lexer=None, filename=None):
@@ -435,13 +428,14 @@ class Globals(object):
         else:
             lexer = pygments.lexers.get_lexer_by_name(lexer, encoding='chardet')
 
-        if lexer is None or len(text) >= asint(config.get('scm.view.max_syntax_highlight_bytes', 500000)):
-            # no highlighting, but we should escape, encode, and wrap it in
-            # a <pre>
-            text = cgi.escape(text)
-            return Markup('<pre>' + text + '</pre>')
-        else:
+        if lexer is not None and len(text) < asint(
+            config.get('scm.view.max_syntax_highlight_bytes', 500000)
+        ):
             return Markup(pygments.highlight(text, lexer, formatter))
+        # no highlighting, but we should escape, encode, and wrap it in
+        # a <pre>
+        text = cgi.escape(text)
+        return Markup(f'<pre>{text}</pre>')
 
     def forge_markdown(self, **kwargs):
         '''return a markdown.Markdown object on which you can call convert'''
@@ -528,20 +522,22 @@ class Globals(object):
         self.resource_manager.register(ew.JSLink(href, **kw))
 
     def register_forge_css(self, href, **kw):
-        self.resource_manager.register(ew.CSSLink('allura/' + href, **kw))
+        self.resource_manager.register(ew.CSSLink(f'allura/{href}', **kw))
 
     def register_forge_js(self, href, **kw):
-        self.resource_manager.register(ew.JSLink('allura/' + href, **kw))
+        self.resource_manager.register(ew.JSLink(f'allura/{href}', **kw))
 
     def register_app_css(self, href, **kw):
         app = kw.pop('app', c.app)
         self.resource_manager.register(
-            ew.CSSLink('tool/%s/%s' % (app.config.tool_name.lower(), href), **kw))
+            ew.CSSLink(f'tool/{app.config.tool_name.lower()}/{href}', **kw)
+        )
 
     def register_app_js(self, href, **kw):
         app = kw.pop('app', c.app)
         self.resource_manager.register(
-            ew.JSLink('tool/%s/%s' % (app.config.tool_name.lower(), href), **kw))
+            ew.JSLink(f'tool/{app.config.tool_name.lower()}/{href}', **kw)
+        )
 
     def register_theme_css(self, href, **kw):
         self.resource_manager.register(ew.CSSLink(self.theme_href(href), **kw))
@@ -589,7 +585,7 @@ class Globals(object):
 
     @LazyProperty
     def noreply(self):
-        return six.text_type(config.get('noreply', 'noreply@%s' % config['domain']))
+        return six.text_type(config.get('noreply', f"noreply@{config['domain']}"))
 
     @property
     def build_key(self):
@@ -597,10 +593,11 @@ class Globals(object):
 
     @LazyProperty
     def global_nav(self):
-        if not config.get('global_nav', False):
-            return []
-
-        return json.loads(config.get('global_nav'))
+        return (
+            json.loads(config.get('global_nav'))
+            if config.get('global_nav', False)
+            else []
+        )
 
     @LazyProperty
     def nav_logo(self):
@@ -618,14 +615,13 @@ class Globals(object):
             return False
 
         allura_path = os.path.dirname(os.path.dirname(__file__))
-        image_full_path = '%s/public/nf/images/%s' % (
-            allura_path, logo['image_path'])
+        image_full_path = f"{allura_path}/public/nf/images/{logo['image_path']}"
 
         if not os.path.isfile(image_full_path):
-            log.warning('Could not find logo at: %s' % image_full_path)
+            log.warning(f'Could not find logo at: {image_full_path}')
             return False
 
-        path = 'images/%s' % logo['image_path']
+        path = f"images/{logo['image_path']}"
         return {
             "image_path": self.forge_static(path),
             "redirect_link": logo['redirect_link'],
@@ -647,11 +643,9 @@ class Icon(object):
         }
         if tag == 'a':
             attrs['href'] = '#'
-        attrs.update(kw)
+        attrs |= kw
         attrs = ew._Jinja2Widget().j2_attrs(attrs)
-        visible_title = ''
-        if show_title:
-            visible_title = '&nbsp;{}'.format(Markup.escape(title))
-        closing_tag = '</{}>'.format(tag) if closing_tag else ''
-        icon = '<{} {}><i class="{}"></i>{}{}'.format(tag, attrs, self.css, visible_title, closing_tag)
+        visible_title = f'&nbsp;{Markup.escape(title)}' if show_title else ''
+        closing_tag = f'</{tag}>' if closing_tag else ''
+        icon = f'<{tag} {attrs}><i class="{self.css}"></i>{visible_title}{closing_tag}'
         return Markup(icon)
